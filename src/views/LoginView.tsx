@@ -402,20 +402,51 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
     <div className="w-full min-h-screen lg:h-screen lg:overflow-hidden bg-[#16171b] text-white flex flex-col lg:flex-row selection:bg-[#8B5CF6] selection:text-white">
       {/* ========================================================================= */}
       {/* LEFT PANEL: Dark Theme Form Section (Desktop Left, Mobile Bottom)         */}
-      {/* "Only the input box is scrollable" -> Independent full-height scroll container */}
+      {/* Independent full-height scrollable container with visible action buttons  */}
       {/* ========================================================================= */}
-      <div className="w-full lg:w-[40%] h-full flex flex-col justify-between order-2 lg:order-1 bg-[#16171b] z-10 shrink-0 relative overflow-hidden">
+      <div className="w-full lg:w-[44%] xl:w-[40%] h-full flex flex-col order-2 lg:order-1 bg-[#16171b] z-10 shrink-0 relative overflow-hidden">
         
         {/* Scrollable Container for Inputs / Form Content */}
         <div
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          className="flex-1 h-full overflow-y-auto custom-scrollbar p-6 sm:p-10 lg:p-12 xl:p-14 2xl:p-16 flex flex-col justify-between min-h-0"
+          className="flex-1 h-full overflow-y-auto custom-scrollbar p-6 sm:p-8 lg:p-10 xl:p-12 flex flex-col justify-start gap-6 min-h-0"
         >
-          {/* Top Form Header Area with animated header text */}
-          <div className="shrink-0 mb-6 sm:mb-8 overflow-hidden">
-            <div className="relative min-h-[64px] sm:min-h-[72px]">
+          {/* Top Form Header Area with animated header text & Portal Switcher */}
+          <div className="shrink-0 space-y-4">
+            {/* Mobile & Desktop In-Form Portal Switcher Pills */}
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#202228] border border-zinc-800 w-full overflow-x-auto custom-scrollbar">
+              {(['student', 'parent', 'teacher', 'super_admin'] as UserRole[]).map((r) => {
+                const cfg = PORTAL_CONFIGS[r];
+                const isCurrent = role === r;
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => {
+                      setRole(r);
+                      setIdentifier(cfg.defaultEmail);
+                      setPassword(cfg.defaultPass);
+                      setError(null);
+                      if (typeof window !== 'undefined') {
+                        window.history.replaceState({}, '', cfg.urlPath);
+                      }
+                    }}
+                    className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      isCurrent
+                        ? `${cfg.buttonClass} text-white shadow-xs`
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+                    }`}
+                  >
+                    <cfg.icon className="w-3.5 h-3.5" />
+                    <span>{r === 'super_admin' ? 'Admin' : r.charAt(0).toUpperCase() + r.slice(1)}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="relative min-h-[56px]">
               {/* Login Header */}
               <div
                 className={`transition-all duration-300 ease-out transform ${
@@ -424,11 +455,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                     : 'opacity-0 -translate-x-8 pointer-events-none absolute inset-0'
                 }`}
               >
-                <h2 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
+                <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
                   Login
                 </h2>
-                <p className="text-sm text-zinc-400 mt-1.5 font-normal">
-                  Enter your account details
+                <p className="text-xs sm:text-sm text-zinc-400 mt-1 font-normal">
+                  Enter your account details or use demo credentials below
                 </p>
               </div>
 
@@ -440,10 +471,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                     : 'opacity-0 translate-x-8 pointer-events-none absolute inset-0'
                 }`}
               >
-                <h2 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
+                <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
                   Sign Up
                 </h2>
-                <p className="text-sm text-zinc-400 mt-1.5 font-normal">
+                <p className="text-xs sm:text-sm text-zinc-400 mt-1 font-normal">
                   {activeConfig.signupPrompt}
                 </p>
               </div>
@@ -451,7 +482,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
 
             {/* Error Alert */}
             {error && (
-              <div className="mt-4 p-3.5 sm:p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-3 text-rose-200 text-xs sm:text-sm animate-fadeIn shadow-xs">
+              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-3 text-rose-200 text-xs sm:text-sm animate-fadeIn shadow-xs">
                 <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-rose-400 shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
                   <div className="font-semibold text-rose-300 text-xs uppercase tracking-wider">Access Notice</div>
@@ -461,8 +492,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
             )}
           </div>
 
-          {/* Sliding Form Container (Slide in & Slide out animation) */}
-          <div className="my-auto py-2 w-full overflow-hidden">
+          {/* Sliding Form Container (Slide in & Slide out animation without clipping) */}
+          <div className="w-full overflow-x-hidden py-1">
             <div
               className={`flex w-[200%] transition-transform duration-350 ease-in-out ${
                 activeTab === 'login' ? 'translate-x-0' : '-translate-x-1/2'
@@ -475,26 +506,26 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                 }`}
                 aria-hidden={activeTab !== 'login'}
               >
-                <form onSubmit={handleLoginSubmit} className="space-y-6 sm:space-y-7">
+                <form onSubmit={handleLoginSubmit} className="space-y-5">
                   {/* Username / Email field */}
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                      Username
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">
+                      Username / Email / ID
                     </label>
                     <input
                       type="text"
                       tabIndex={activeTab === 'login' ? 0 : -1}
                       value={identifier}
                       onChange={(e) => setIdentifier(e.target.value)}
-                      placeholder="Enter your username or email"
+                      placeholder="Enter your username, email, or school ID"
                       required={activeTab === 'login'}
-                      className={`w-full bg-transparent border-b border-zinc-700/80 pb-2.5 pt-1 text-white placeholder-zinc-500/70 focus:outline-hidden ${activeConfig.focusBorderClass} text-sm sm:text-base transition-colors`}
+                      className={`w-full bg-transparent border-b border-zinc-700/80 pb-2 pt-1 text-white placeholder-zinc-500/70 focus:outline-hidden ${activeConfig.focusBorderClass} text-sm sm:text-base transition-colors`}
                     />
                   </div>
 
                   {/* Password field */}
                   <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">
                       Password
                     </label>
                     <div className="relative flex items-center">
@@ -505,7 +536,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Enter your password"
                         required={activeTab === 'login'}
-                        className={`w-full bg-transparent border-b border-zinc-700/80 pb-2.5 pt-1 pr-10 text-white placeholder-zinc-500/70 focus:outline-hidden ${activeConfig.focusBorderClass} text-sm sm:text-base transition-colors`}
+                        className={`w-full bg-transparent border-b border-zinc-700/80 pb-2 pt-1 pr-10 text-white placeholder-zinc-500/70 focus:outline-hidden ${activeConfig.focusBorderClass} text-sm sm:text-base transition-colors`}
                       />
                       <button
                         type="button"
@@ -521,7 +552,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
 
                   {/* Quick Demo Credentials Assistant */}
                   {activeConfig.defaultEmail && (
-                    <div className="p-3.5 rounded-xl bg-[#202228] border border-zinc-800 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                    <div className="p-3 rounded-xl bg-[#202228] border border-zinc-800 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-1.5 font-semibold text-zinc-200">
                           <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
@@ -547,35 +578,35 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                     </div>
                   )}
 
-                  {/* Forgot Password Link */}
-                  <div className="flex justify-start">
-                    <button
-                      type="button"
-                      tabIndex={activeTab === 'login' ? 0 : -1}
-                      onClick={() => {
-                        setForgotSent(false);
-                        setShowForgotPassword(true);
-                      }}
-                      className="text-xs sm:text-sm text-zinc-400 hover:text-white transition-colors cursor-pointer font-normal"
-                    >
-                      Forgot Password?
-                    </button>
-                  </div>
-
                   {/* Main Dynamic Portal Action Button */}
-                  <div className="pt-2 space-y-3.5">
+                  <div className="pt-2 space-y-3">
                     <button
                       type="submit"
                       disabled={loading}
                       tabIndex={activeTab === 'login' ? 0 : -1}
-                      className={`w-full py-3.5 px-6 rounded-xl font-semibold text-base text-white ${activeConfig.buttonClass} active:scale-[0.99] transition-all duration-150 shadow-lg cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2`}
+                      className={`w-full py-3.5 px-6 rounded-xl font-bold text-base text-white ${activeConfig.buttonClass} active:scale-[0.99] transition-all duration-150 shadow-lg cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2`}
                     >
                       {loading ? (
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       ) : (
-                        <span>Login</span>
+                        <span>Sign In</span>
                       )}
                     </button>
+
+                    {/* Forgot Password Link */}
+                    <div className="flex justify-between items-center text-xs text-zinc-400">
+                      <button
+                        type="button"
+                        tabIndex={activeTab === 'login' ? 0 : -1}
+                        onClick={() => {
+                          setForgotSent(false);
+                          setShowForgotPassword(true);
+                        }}
+                        className="hover:text-white transition-colors cursor-pointer"
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
 
                     {/* Google Sign-in Option */}
                     {activeConfig.allowGoogle && (
@@ -584,7 +615,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                         tabIndex={activeTab === 'login' ? 0 : -1}
                         onClick={handleGoogleSignIn}
                         disabled={googleLoading}
-                        className="w-full py-3 px-6 rounded-xl font-medium text-sm text-zinc-300 bg-zinc-900/90 hover:bg-zinc-800 hover:text-white active:scale-[0.99] border border-zinc-800 shadow-xs transition-all duration-150 cursor-pointer disabled:opacity-60 flex items-center justify-center gap-3"
+                        className="w-full py-2.5 px-6 rounded-xl font-medium text-sm text-zinc-300 bg-zinc-900/90 hover:bg-zinc-800 hover:text-white active:scale-[0.99] border border-zinc-800 shadow-xs transition-all duration-150 cursor-pointer disabled:opacity-60 flex items-center justify-center gap-3"
                       >
                         {googleLoading ? (
                           <div className="w-4 h-4 border-2 border-zinc-400/30 border-t-zinc-400 rounded-full animate-spin" />
@@ -730,78 +761,78 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
             </div>
           </div>
 
-            {/* Bottom Footer: "Don't have an account? [Sign up]" (Disabled for Admin) */}
-            <div className="shrink-0 pt-6 mt-6 border-t border-zinc-800/80 flex items-center justify-start gap-3 text-sm text-zinc-400">
-              {activeConfig.allowSignUp ? (
-                activeTab === 'login' ? (
-                  <>
-                    <span>Don't have an account?</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('signup');
-                        setError(null);
-                      }}
-                      className="px-3.5 py-1.5 rounded-lg bg-[#28292e] hover:bg-[#34363d] text-zinc-200 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-xs"
-                    >
-                      Sign up
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span>Already have an account?</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('login');
-                        setError(null);
-                      }}
-                      className="px-3.5 py-1.5 rounded-lg bg-[#28292e] hover:bg-[#34363d] text-zinc-200 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-xs"
-                    >
-                      Sign in
-                    </button>
-                  </>
-                )
+          {/* Bottom Footer: "Don't have an account? [Sign up]" (Disabled for Admin) */}
+          <div className="shrink-0 pt-4 border-t border-zinc-800/80 flex items-center justify-start gap-3 text-xs sm:text-sm text-zinc-400">
+            {activeConfig.allowSignUp ? (
+              activeTab === 'login' ? (
+                <>
+                  <span>Don't have an account?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('signup');
+                      setError(null);
+                    }}
+                    className="px-3 py-1 rounded-lg bg-[#28292e] hover:bg-[#34363d] text-zinc-200 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-xs"
+                  >
+                    Sign up
+                  </button>
+                </>
               ) : (
-                <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
-                  <Shield className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                  <span>Administrative accounts are provisioned by institution directors only.</span>
-                </div>
-              )}
-            </div>
-
-            {/* Public Student Registration & Admissions Link */}
-            <div className="mt-5 p-4 rounded-2xl bg-[#1b1c22] border border-purple-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 border border-purple-500/30">
-                  <GraduationCap className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-white text-xs sm:text-sm">Prospective Student Admissions</h4>
-                  <p className="text-[11px] text-zinc-400">
-                    Apply for admission or track an existing application status
-                  </p>
-                </div>
+                <>
+                  <span>Already have an account?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('login');
+                      setError(null);
+                    }}
+                    className="px-3 py-1 rounded-lg bg-[#28292e] hover:bg-[#34363d] text-zinc-200 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-xs"
+                  >
+                    Sign in
+                  </button>
+                </>
+              )
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
+                <Shield className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span>Administrative accounts are provisioned by institution directors only.</span>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (typeof window !== 'undefined') {
-                    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-                  }
-                  if (onOpenAdmissions) {
-                    onOpenAdmissions();
-                  } else {
-                    window.location.hash = '#/admissions';
-                  }
-                }}
-                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all shadow-md shadow-purple-600/30 cursor-pointer self-start sm:self-center whitespace-nowrap"
-              >
-                Apply Online
-              </button>
+            )}
+          </div>
+
+          {/* Public Student Registration & Admissions Link */}
+          <div className="shrink-0 p-4 rounded-2xl bg-[#1b1c22] border border-purple-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 border border-purple-500/30">
+                <GraduationCap className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-white text-xs sm:text-sm">Prospective Student Admissions</h4>
+                <p className="text-[11px] text-zinc-400">
+                  Apply for admission or track an existing application status
+                </p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+                }
+                if (onOpenAdmissions) {
+                  onOpenAdmissions();
+                } else {
+                  window.location.hash = '#/admissions';
+                }
+              }}
+              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all shadow-md shadow-purple-600/30 cursor-pointer self-start sm:self-center whitespace-nowrap"
+            >
+              Apply Online
+            </button>
           </div>
         </div>
+      </div>
 
         {/* ========================================================================= */}
         {/* RIGHT PANEL: FIXED Purple Hero Section (Stays Fixed, Never Scrolls)       */}
