@@ -1,0 +1,6 @@
+{
+  "name": "School Management System",
+  "description": "Production-grade School Management System for administrators, teachers, parents, and students with real database, attendance tracking, academic results, fee records, and RBAC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,11 @@
+{
+  "fileId": "c862c4d3-d6e6-426b-966a-2b2f8fafcf0a",
+  "storageKey": "private/c862c4d3-d6e6-426b-966a-2b2f8fafcf0a.pdf",
+  "filename": "report.pdf",
+  "mimeType": "application/pdf",
+  "size": 127,
+  "category": "admission_document",
+  "isPublic": false,
+  "url": "/api/admissions/documents/c862c4d3-d6e6-426b-966a-2b2f8fafcf0a",
+  "createdAt": "2026-10-04T16:36:15.641Z"
+}

@@ -1,0 +1,11 @@
+{
+  "fileId": "6af3fd23-be4f-4b8b-90ef-ebe42a9ef705",
+  "storageKey": "private/6af3fd23-be4f-4b8b-90ef-ebe42a9ef705.jpg",
+  "filename": "upload.jpg",
+  "mimeType": "image/jpeg",
+  "size": 134,
+  "category": "passport_photo",
+  "isPublic": false,
+  "url": "/api/admissions/documents/6af3fd23-be4f-4b8b-90ef-ebe42a9ef705",
+  "createdAt": "2026-10-04T16:36:15.639Z"
+}

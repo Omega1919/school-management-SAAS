@@ -1,0 +1,11 @@
+{
+  "fileId": "bc327990-96ab-4f36-a9af-1a85f8ea01f9",
+  "storageKey": "public/bc327990-96ab-4f36-a9af-1a85f8ea01f9.jpg",
+  "filename": "upload.jpg",
+  "mimeType": "image/jpeg",
+  "size": 134,
+  "category": "hero_image",
+  "isPublic": true,
+  "url": "/api/public-portal/hero-image/bc327990-96ab-4f36-a9af-1a85f8ea01f9",
+  "createdAt": "2026-10-04T16:35:38.344Z"
+}

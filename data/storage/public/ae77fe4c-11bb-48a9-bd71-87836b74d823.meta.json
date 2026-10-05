@@ -1,0 +1,11 @@
+{
+  "fileId": "ae77fe4c-11bb-48a9-bd71-87836b74d823",
+  "storageKey": "public/ae77fe4c-11bb-48a9-bd71-87836b74d823.jpg",
+  "filename": "upload.jpg",
+  "mimeType": "image/jpeg",
+  "size": 134,
+  "category": "hero_image",
+  "isPublic": true,
+  "url": "/api/public-portal/hero-image/ae77fe4c-11bb-48a9-bd71-87836b74d823",
+  "createdAt": "2026-10-04T16:35:21.684Z"
+}

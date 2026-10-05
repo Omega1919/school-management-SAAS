@@ -1,0 +1,213 @@
+import 'dotenv/config';
+import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
+import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
+import { PGlite } from '@electric-sql/pglite';
+import pg from 'pg';
+const { Pool } = pg;
+import * as schema from './schema.ts';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+
+declare global {
+  var _postgresPool: any;
+  var _drizzleDb: any;
+  var _pgliteInstance: any;
+}
+
+export const createPool = () => {
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (global._postgresPool) {
+    if (isProd && global._postgresPool.isPglite) {
+      throw new Error(
+        'FATAL: PGlite embedded database fallback is strictly forbidden in production. PostgreSQL connection (DATABASE_URL) is mandatory.'
+      );
+    }
+    return global._postgresPool;
+  }
+
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  const sqlHost = process.env.SQL_HOST?.trim();
+  const sqlUser = process.env.SQL_USER?.trim();
+  const sqlPassword = process.env.SQL_PASSWORD;
+  const sqlDbName = process.env.SQL_DB_NAME?.trim() || 'postgres';
+  const sqlPort = parseInt(process.env.SQL_PORT?.trim() || '5432', 10);
+
+  if (databaseUrl) {
+    const pgPool = new Pool({
+      connectionString: databaseUrl,
+      ssl: { rejectUnauthorized: false },
+      max: 10,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 15000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 5000,
+    });
+
+    pgPool.on('error', (err: any) => {
+      const safeMsg = (err?.message || '').replace(/postgresql:\/\/[^@\s]+@/gi, 'postgresql://***:***@');
+      console.warn('Notice: Postgres connection reset or idle timeout:', safeMsg);
+    });
+
+    global._postgresPool = pgPool;
+    return global._postgresPool;
+  } else if (sqlHost && sqlUser && sqlPassword) {
+    const pgPool = new Pool({
+      host: sqlHost,
+      port: sqlPort,
+      user: sqlUser,
+      password: sqlPassword,
+      database: sqlDbName,
+      ssl: { rejectUnauthorized: false },
+      max: 10,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 15000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 5000,
+    });
+
+    pgPool.on('error', (err: any) => {
+      const safeMsg = (err?.message || '').replace(/postgresql:\/\/[^@\s]+@/gi, 'postgresql://***:***@');
+      console.warn('Notice: Postgres connection reset or idle timeout:', safeMsg);
+    });
+
+    global._postgresPool = pgPool;
+    return global._postgresPool;
+  }
+
+  // In production, failure is mandatory and immediate:
+  if (isProd) {
+    throw new Error(
+      'FATAL: PostgreSQL configuration is mandatory in production (DATABASE_URL or SQL_HOST/SQL_USER/SQL_PASSWORD). PGlite embedded database fallback is strictly forbidden in production.'
+    );
+  }
+
+  // Development/Test fallback: embedded PGlite in persistent/temp directory
+  const dataDir = process.env.PGLITE_DATA_DIR?.trim() || path.join(os.tmpdir(), 'sms_pglite_db');
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  } else {
+    // Clean up stale lock files from killed node processes
+    const pidFile = path.join(dataDir, 'postmaster.pid');
+    if (fs.existsSync(pidFile)) {
+      try {
+        fs.unlinkSync(pidFile);
+      } catch (e) {
+        // Ignore if locked by active process
+      }
+    }
+  }
+
+  if (!global._pgliteInstance) {
+    global._pgliteInstance = new PGlite(dataDir);
+  }
+
+  // Wrapper pool object for compatibility
+  global._postgresPool = {
+    query: async (text: string, params?: any[]) => {
+      return await global._pgliteInstance.query(text, params);
+    },
+    exec: async (sql: string) => {
+      return await global._pgliteInstance.exec(sql);
+    },
+    isPglite: true,
+  };
+
+  return global._postgresPool;
+};
+
+export const pool = createPool();
+
+export const getDb = () => {
+  const isProd = process.env.NODE_ENV === 'production';
+  if (isProd && global._pgliteInstance) {
+    throw new Error(
+      'FATAL: PGlite embedded database fallback is strictly forbidden in production. PostgreSQL connection (DATABASE_URL) is mandatory.'
+    );
+  }
+
+  if (global._drizzleDb) {
+    return global._drizzleDb;
+  }
+
+  if (global._pgliteInstance) {
+    if (isProd) {
+      throw new Error(
+        'FATAL: PGlite embedded database fallback is strictly forbidden in production. PostgreSQL connection (DATABASE_URL) is mandatory.'
+      );
+    }
+    global._drizzleDb = drizzlePglite(global._pgliteInstance, { schema });
+  } else {
+    global._drizzleDb = drizzlePg(pool, { schema });
+  }
+  return global._drizzleDb;
+};
+
+export const db = getDb();
+
+/**
+ * Execute a database operation with automatic retry on transient socket/connection drops
+ */
+export async function withDbRetry<T>(operation: () => Promise<T>, maxRetries = 2): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await operation();
+    } catch (err: any) {
+      attempt++;
+      const isTransientConnectionError =
+        err?.message?.includes('Connection terminated unexpectedly') ||
+        err?.message?.includes('connection terminated') ||
+        err?.message?.includes('ECONNRESET') ||
+        err?.message?.includes('socket has been ended') ||
+        err?.code === 'ECONNRESET' ||
+        err?.code === '57P01';
+      if (isTransientConnectionError && attempt <= maxRetries) {
+        console.warn(`Transient database connection drop encountered (attempt ${attempt}/${maxRetries}), retrying...`);
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
+ * Startup database connection verification
+ * Verifies connectivity and ensures relational tables exist.
+ * Startup NEVER seeds demo users or dummy records automatically.
+ */
+export async function verifyDatabase(): Promise<void> {
+  const isProd = process.env.NODE_ENV === 'production';
+  if (isProd && (global._pgliteInstance || (pool as any)?.isPglite)) {
+    throw new Error(
+      'FATAL: PGlite embedded database fallback is strictly forbidden in production. PostgreSQL connection (DATABASE_URL) is mandatory.'
+    );
+  }
+
+  await withDbRetry(async () => {
+    try {
+      if (global._pgliteInstance) {
+        await global._pgliteInstance.query('SELECT 1');
+      } else {
+        await pool.query('SELECT 1');
+      }
+    } catch (err: any) {
+      const safeErr = (err?.message || '').replace(/postgresql:\/\/[^@\s]+@/gi, 'postgresql://***:***@');
+      throw new Error(`Database verification query failed: ${safeErr}`);
+    }
+  });
+
+  // Execute versioned schema migrations on boot
+  try {
+    const { runMigrations } = await import('./migrations.ts');
+    const { applied, total } = await runMigrations();
+    console.log(`✓ Database schema and migrations verified (${applied} applied, ${total} total).`);
+  } catch (err: any) {
+    console.error('FATAL ERROR during database schema/migration verification:', err?.message || err);
+    throw new Error(`Database schema/migration initialization failed: ${err?.message || err}`);
+  }
+
+  console.log('✓ Database connection established and verified.');
+}

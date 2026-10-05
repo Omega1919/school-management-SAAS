@@ -1,0 +1,11 @@
+{
+  "fileId": "b5a4ed16-2ae7-4f6a-99e0-ddf0e1529fb2",
+  "storageKey": "private/b5a4ed16-2ae7-4f6a-99e0-ddf0e1529fb2.pdf",
+  "filename": "report.pdf",
+  "mimeType": "application/pdf",
+  "size": 127,
+  "category": "admission_document",
+  "isPublic": false,
+  "url": "/api/admissions/documents/b5a4ed16-2ae7-4f6a-99e0-ddf0e1529fb2",
+  "createdAt": "2026-10-04T16:35:21.648Z"
+}
