@@ -112,7 +112,8 @@ async function startServer() {
   // Database connectivity verification & baseline demo account verification
   try {
     await verifyDatabase();
-    if (process.env.NODE_ENV !== 'production') {
+    const allowDemo = process.env.ENABLE_DEMO_LOGINS === 'true' || process.env.DEMO_MODE === 'true' || process.env.SEED_DEMO_DATA === 'true' || process.env.ALLOW_DEMO === 'true' || process.env.NODE_ENV !== 'production';
+    if (allowDemo) {
       await ensureDefaultDemoData();
     }
   } catch (err: any) {

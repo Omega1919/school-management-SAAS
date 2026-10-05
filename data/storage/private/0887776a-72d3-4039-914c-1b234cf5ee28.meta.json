@@ -1,0 +1,11 @@
+{
+  "fileId": "0887776a-72d3-4039-914c-1b234cf5ee28",
+  "storageKey": "private/0887776a-72d3-4039-914c-1b234cf5ee28.pdf",
+  "filename": "birth_certificate.pdf",
+  "mimeType": "application/pdf",
+  "size": 127,
+  "category": "admission_document",
+  "isPublic": false,
+  "url": "/api/admissions/documents/0887776a-72d3-4039-914c-1b234cf5ee28",
+  "createdAt": "2026-10-05T16:21:35.592Z"
+}

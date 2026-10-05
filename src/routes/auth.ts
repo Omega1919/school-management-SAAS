@@ -217,17 +217,18 @@ authRouter.post('/login', loginLimiter, async (req: AuthRequest, res: Response) 
     }
 
     const isProd = process.env.NODE_ENV === 'production';
+    const allowDemo = process.env.ENABLE_DEMO_LOGINS === 'true' || process.env.DEMO_MODE === 'true' || process.env.SEED_DEMO_DATA === 'true' || process.env.ALLOW_DEMO === 'true' || !isProd;
     const lowerIdentifier = rawIdentifier.toLowerCase();
     const isDemoAlias = ['admin', 'admin1', 'superadmin', 'teacher', 'teacher1', 'parent', 'parent1', 'student', 'student1'].includes(lowerIdentifier);
 
-    // In production, strictly reject demo aliases
-    if (isProd && isDemoAlias) {
+    // In production without demo mode enabled, strictly reject demo aliases
+    if (isProd && !allowDemo && isDemoAlias) {
       return res.status(401).json({
         error: 'Demo aliases are disabled in production. Please use your registered email address or official school identifier.',
       });
     }
 
-    // In production, strictly reject demo test accounts
+    // In production without demo mode enabled, strictly reject demo test accounts
     const isDemoEmail = [
       'student.chinedu@school.com',
       'parent.ibrahim@school.com',
@@ -235,14 +236,14 @@ authRouter.post('/login', loginLimiter, async (req: AuthRequest, res: Response) 
       'admin@school.com',
     ].includes(lowerIdentifier);
 
-    if (isProd && isDemoEmail) {
+    if (isProd && !allowDemo && isDemoEmail) {
       return res.status(401).json({
         error: 'Demo accounts are disabled in production. Please sign in with your verified institutional account credentials.',
       });
     }
 
-    // Friendly shorthand aliases for demo testing (strictly development only)
-    if (!isProd) {
+    // Friendly shorthand aliases for demo testing
+    if (allowDemo) {
       if (lowerIdentifier === 'admin' || lowerIdentifier === 'admin1' || lowerIdentifier === 'superadmin') {
         rawIdentifier = 'admin@school.com';
       } else if (lowerIdentifier === 'teacher' || lowerIdentifier === 'teacher1') {

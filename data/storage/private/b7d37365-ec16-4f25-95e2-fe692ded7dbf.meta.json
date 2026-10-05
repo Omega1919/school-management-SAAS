@@ -1,0 +1,11 @@
+{
+  "fileId": "b7d37365-ec16-4f25-95e2-fe692ded7dbf",
+  "storageKey": "private/b7d37365-ec16-4f25-95e2-fe692ded7dbf.pdf",
+  "filename": "report.pdf",
+  "mimeType": "application/pdf",
+  "size": 127,
+  "category": "admission_document",
+  "isPublic": false,
+  "url": "/api/admissions/documents/b7d37365-ec16-4f25-95e2-fe692ded7dbf",
+  "createdAt": "2026-10-05T16:21:35.824Z"
+}

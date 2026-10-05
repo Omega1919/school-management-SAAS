@@ -1,0 +1,11 @@
+{
+  "fileId": "a27be598-8e38-4b02-b664-f491ba0cd039",
+  "storageKey": "public/a27be598-8e38-4b02-b664-f491ba0cd039.jpg",
+  "filename": "upload.jpg",
+  "mimeType": "image/jpeg",
+  "size": 134,
+  "category": "hero_image",
+  "isPublic": true,
+  "url": "/api/public-portal/hero-image/a27be598-8e38-4b02-b664-f491ba0cd039",
+  "createdAt": "2026-10-05T16:21:35.858Z"
+}

@@ -626,9 +626,9 @@ const LAGOS_AREAS = [
  * - Academic sessions, enrollments, fees, results, homeworks, submissions, messages
  */
 export async function seedInitialData(explicitOptIn = false) {
-  // Production safety: Never allow TRUNCATE or database resets in production
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('PRODUCTION SAFETY VIOLATION: Database reseed/reset operations with TRUNCATE are strictly forbidden in production.');
+  // Production safety: Never allow TRUNCATE or database resets in production without explicit opt-in
+  if (process.env.NODE_ENV === 'production' && !explicitOptIn && process.env.ALLOW_SEED !== 'true') {
+    throw new Error('PRODUCTION SAFETY VIOLATION: Database reseed/reset operations with TRUNCATE are strictly forbidden in production without explicit opt-in.');
   }
 
   try {
@@ -1526,8 +1526,9 @@ export async function seedInitialData(explicitOptIn = false) {
  * If demo accounts or records are missing, seeds the complete academic dataset.
  */
 export async function ensureDefaultDemoData(): Promise<void> {
-  // Production safety: Automatic demo data and user seeding must NEVER run in production
-  if (process.env.NODE_ENV === 'production') {
+  const allowDemo = process.env.ENABLE_DEMO_LOGINS === 'true' || process.env.DEMO_MODE === 'true' || process.env.SEED_DEMO_DATA === 'true' || process.env.ALLOW_DEMO === 'true' || process.env.NODE_ENV !== 'production';
+  // Production safety: Automatic demo data and user seeding only runs in dev or with explicit demo flags
+  if (!allowDemo) {
     console.log('Production mode active: automatic demo seeding and dummy accounts are disabled.');
     return;
   }
