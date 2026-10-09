@@ -208,23 +208,23 @@ export const ProfileModalProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       {/* Global Full-Page Profile View */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-50 overflow-y-auto flex flex-col min-h-screen text-slate-800 animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 bg-slate-50 overflow-y-auto overflow-x-hidden flex flex-col min-h-screen text-slate-800 animate-in fade-in duration-150">
           {/* Top Sticky Navigation Bar */}
           <header className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-2xs">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-3.5 flex items-center justify-between gap-3 sm:gap-4">
               {/* Back Button & Title */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                 <button
                   type="button"
                   onClick={closeProfile}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200 shrink-0 min-h-[38px]"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Back</span>
                 </button>
                 <div className="h-4 w-px bg-slate-200 hidden sm:block"></div>
-                <div className="flex items-center gap-2">
-                  <span className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hidden sm:inline-flex">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hidden sm:inline-flex shrink-0">
                     {profileType === 'student' && <GraduationCap className="w-4 h-4 text-indigo-600" />}
                     {profileType === 'teacher' && <User className="w-4 h-4 text-emerald-600" />}
                     {profileType === 'parent' && <Shield className="w-4 h-4 text-purple-600" />}
@@ -346,7 +346,7 @@ export const ProfileModalProvider: React.FC<{ children: React.ReactNode }> = ({ 
           )}
 
           {/* Full Page Content Container */}
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-1 space-y-6">
+          <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6 w-full max-w-full flex-1 space-y-6 min-w-0">
             {loading && (
               <div className="py-24 flex flex-col items-center justify-center gap-3">
                 <div className="w-9 h-9 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
@@ -377,64 +377,64 @@ export const ProfileModalProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 {/* STUDENT FULL PAGE PROFILE */}
                 {/* ========================================================================= */}
                 {profileType === 'student' && (
-                  <div className="space-y-6">
+                  <div className="w-full max-w-full min-w-0 space-y-6">
                     {/* Hero Header Card */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-                      <div className="flex items-start sm:items-center gap-4">
-                        <div className="w-16 h-16 rounded-xl bg-indigo-600 text-white font-bold text-2xl flex items-center justify-center shrink-0 shadow-xs">
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 sm:gap-5 w-full max-w-full min-w-0 overflow-hidden">
+                      <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                        <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-xl bg-indigo-600 text-white font-bold text-xl sm:text-2xl flex items-center justify-center shrink-0 shadow-xs">
                           {data.student?.firstName?.[0] || 'S'}
                           {data.student?.lastName?.[0] || ''}
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <h2 className="text-xl font-bold text-slate-900">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <h2 className="text-lg sm:text-xl font-bold text-slate-900 break-words leading-tight">
                               {data.student?.firstName} {data.student?.lastName}
                             </h2>
                             <Badge variant={data.student?.status === 'active' ? 'success' : 'danger'}>
                               {data.student?.status === 'active' ? 'Active' : 'Deactivated / Suspended'}
                             </Badge>
                           </div>
-                          <div className="flex items-center gap-2 text-xs text-slate-500 mt-1.5 flex-wrap">
-                            <span className="font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-200 text-slate-700 font-semibold flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-slate-500 mt-1.5 flex-wrap min-w-0">
+                            <span className="font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-200 text-slate-700 font-semibold flex items-center gap-1.5 shrink-0">
                               {data.student?.studentId}
                               <button
                                 type="button"
                                 onClick={() => copyToClipboard(data.student?.studentId, 'code')}
-                                className="text-slate-400 hover:text-slate-700"
+                                className="text-slate-400 hover:text-slate-700 cursor-pointer"
                                 title="Copy Student ID"
                               >
                                 {copiedText === 'code' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-slate-400" />}
                               </button>
                             </span>
-                            <span>•</span>
-                            <span className="font-semibold text-slate-800">
+                            <span className="text-slate-300">•</span>
+                            <span className="font-semibold text-slate-800 truncate">
                               {data.student?.className || 'Unassigned Class'} {data.student?.classSection ? `(${data.student.classSection})` : ''}
                             </span>
-                            <span>•</span>
-                            <span>{data.student?.sessionName || 'Academic Session'}</span>
+                            <span className="text-slate-300">•</span>
+                            <span className="truncate">{data.student?.sessionName || 'Academic Session'}</span>
                           </div>
                         </div>
                       </div>
 
                       {/* Quick Summary KPIs */}
-                      <div className="flex items-center gap-3 w-full md:w-auto">
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-center flex-1 md:flex-initial min-w-[110px]">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:flex md:items-center gap-2 sm:gap-3 w-full md:w-auto shrink-0">
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-center min-w-0 flex-1 md:flex-initial md:min-w-[105px]">
                           <span className="text-[10px] uppercase font-bold text-slate-500 block tracking-wider">Attendance</span>
-                          <span className="text-base font-bold text-emerald-600">
+                          <span className="text-sm sm:text-base font-bold text-emerald-600 block mt-0.5">
                             {data.attendanceSummary?.attendancePercentage ?? 100}%
                           </span>
                         </div>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-center flex-1 md:flex-initial min-w-[110px]">
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-center min-w-0 flex-1 md:flex-initial md:min-w-[105px]">
                           <span className="text-[10px] uppercase font-bold text-slate-500 block tracking-wider">Guardians</span>
-                          <span className="text-base font-bold text-slate-800">
+                          <span className="text-sm sm:text-base font-bold text-slate-800 block mt-0.5">
                             {data.guardians?.length || 0} Linked
                           </span>
                         </div>
                         {/* Admin-only Financial Balance KPI */}
                         {isAdmin && data.feesSummary && (
-                          <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-center flex-1 md:flex-initial min-w-[110px]">
+                          <div className="col-span-2 sm:col-span-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-center min-w-0 flex-1 md:flex-initial md:min-w-[105px]">
                             <span className="text-[10px] uppercase font-bold text-slate-500 block tracking-wider">Balance Due</span>
-                            <span className={`text-base font-bold font-mono ${parseFloat(data.feesSummary.outstandingBalance || '0') > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                            <span className={`text-sm sm:text-base font-bold font-mono block mt-0.5 ${parseFloat(data.feesSummary.outstandingBalance || '0') > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                               {currencySymbol}{data.feesSummary.outstandingBalance}
                             </span>
                           </div>
@@ -445,7 +445,7 @@ export const ProfileModalProvider: React.FC<{ children: React.ReactNode }> = ({ 
                     {/* Navigation Tabs */}
                     {isAdmin ? (
                       /* Admin sees single page Bio & Overview directly with Payment & Billing Information */
-                      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 space-y-6 shadow-2xs">
+                      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 space-y-6 shadow-2xs w-full max-w-full min-w-0 overflow-hidden">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2 uppercase tracking-wide">
                             <User className="w-4 h-4 text-indigo-600" />
@@ -454,75 +454,75 @@ export const ProfileModalProvider: React.FC<{ children: React.ReactNode }> = ({ 
                           <span className="text-xs text-slate-500">Identity & Demographic Information</span>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 w-full min-w-0">
                           {/* Personal & Academic Details */}
-                          <div className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50/50">
+                          <div className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50/50 min-w-0">
                             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                               <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
                               Personal & Academic Placement
                             </h4>
                             <div className="space-y-2 text-xs">
-                              <div className="flex justify-between py-1.5 border-b border-slate-200/60">
-                                <span className="text-slate-500">Full Name:</span>
-                                <span className="font-semibold text-slate-900">{data.student?.firstName} {data.student?.lastName}</span>
+                              <div className="flex justify-between items-start gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                <span className="text-slate-500 shrink-0">Full Name:</span>
+                                <span className="font-semibold text-slate-900 text-right break-words min-w-0">{data.student?.firstName} {data.student?.lastName}</span>
                               </div>
-                              <div className="flex justify-between py-1.5 border-b border-slate-200/60">
-                                <span className="text-slate-500">Student ID / Code:</span>
-                                <span className="font-mono font-semibold text-slate-800">{data.student?.studentId}</span>
+                              <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                <span className="text-slate-500 shrink-0">Student ID / Code:</span>
+                                <span className="font-mono font-semibold text-slate-800 text-right truncate">{data.student?.studentId}</span>
                               </div>
-                              <div className="flex justify-between py-1.5 border-b border-slate-200/60">
-                                <span className="text-slate-500">Gender:</span>
-                                <span className="font-medium text-slate-800">{data.student?.gender || 'Not specified'}</span>
+                              <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                <span className="text-slate-500 shrink-0">Gender:</span>
+                                <span className="font-medium text-slate-800 text-right">{data.student?.gender || 'Not specified'}</span>
                               </div>
-                              <div className="flex justify-between py-1.5 border-b border-slate-200/60">
-                                <span className="text-slate-500">Date of Birth:</span>
-                                <span className="font-medium text-slate-800">{data.student?.dateOfBirth || 'Not specified'}</span>
+                              <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                <span className="text-slate-500 shrink-0">Date of Birth:</span>
+                                <span className="font-medium text-slate-800 text-right">{data.student?.dateOfBirth || 'Not specified'}</span>
                               </div>
-                              <div className="flex justify-between py-1.5 border-b border-slate-200/60">
-                                <span className="text-slate-500">Admission Date:</span>
-                                <span className="font-medium text-slate-800">{data.student?.admissionDate || 'N/A'}</span>
+                              <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                <span className="text-slate-500 shrink-0">Admission Date:</span>
+                                <span className="font-medium text-slate-800 text-right">{data.student?.admissionDate || 'N/A'}</span>
                               </div>
-                              <div className="flex justify-between py-1.5 border-b border-slate-200/60">
-                                <span className="text-slate-500">Current Class:</span>
-                                <span className="font-semibold text-indigo-700">{data.student?.className || 'Unassigned'}</span>
+                              <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                <span className="text-slate-500 shrink-0">Current Class:</span>
+                                <span className="font-semibold text-indigo-700 text-right truncate">{data.student?.className || 'Unassigned'}</span>
                               </div>
-                              <div className="flex justify-between py-1.5 items-start gap-2">
+                              <div className="flex justify-between py-1.5 items-start gap-2 min-w-0">
                                 <span className="text-slate-500 shrink-0">Home Address:</span>
-                                <span className="font-medium text-slate-800 text-right">{data.student?.address || 'Residential Address on file'}</span>
+                                <span className="font-medium text-slate-800 text-right break-words min-w-0">{data.student?.address || 'Residential Address on file'}</span>
                               </div>
                             </div>
                           </div>
 
                           {/* Account & Emergency Contact */}
-                          <div className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50/50">
+                          <div className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50/50 min-w-0">
                             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                               <Shield className="w-3.5 h-3.5 text-emerald-600" />
                               Account & Emergency Contact
                             </h4>
                             <div className="space-y-2 text-xs">
-                              <div className="flex justify-between py-1.5 border-b border-slate-200/60">
-                                <span className="text-slate-500">Portal Account Status:</span>
-                                <span className="font-medium text-slate-800">
+                              <div className="flex justify-between items-start gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                <span className="text-slate-500 shrink-0">Portal Account Status:</span>
+                                <span className="font-medium text-slate-800 text-right break-words min-w-0">
                                   {data.student?.hasAccount ? (
                                     <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold">
-                                      <CheckCircle2 className="w-3.5 h-3.5" /> Registered ({data.student?.accountEmail || 'Active'})
+                                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> Registered ({data.student?.accountEmail || 'Active'})
                                     </span>
                                   ) : (
                                     <span className="text-slate-400 italic">Pending First Registration</span>
                                   )}
                                 </span>
                               </div>
-                              <div className="flex justify-between py-1.5 border-b border-slate-200/60">
-                                <span className="text-slate-500">Emergency Phone / Info:</span>
-                                <span className="font-semibold text-slate-900">{data.student?.emergencyContact || 'None listed'}</span>
+                              <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                <span className="text-slate-500 shrink-0">Emergency Phone / Info:</span>
+                                <span className="font-semibold text-slate-900 text-right truncate">{data.student?.emergencyContact || 'None listed'}</span>
                               </div>
-                              <div className="flex justify-between py-1.5 border-b border-slate-200/60">
-                                <span className="text-slate-500">Academic Session:</span>
-                                <span className="font-medium text-slate-800">{data.student?.sessionName || 'Current Session'}</span>
+                              <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                <span className="text-slate-500 shrink-0">Academic Session:</span>
+                                <span className="font-medium text-slate-800 text-right truncate">{data.student?.sessionName || 'Current Session'}</span>
                               </div>
-                              <div className="flex justify-between py-1.5">
-                                <span className="text-slate-500">Account Operational State:</span>
-                                <span className="font-semibold">
+                              <div className="flex justify-between items-center gap-2 py-1.5 min-w-0">
+                                <span className="text-slate-500 shrink-0">Account Operational State:</span>
+                                <span className="font-semibold text-right">
                                   {data.student?.status === 'active' ? (
                                     <span className="text-emerald-600">Active</span>
                                   ) : (
@@ -583,7 +583,7 @@ export const ProfileModalProvider: React.FC<{ children: React.ReactNode }> = ({ 
                                 </div>
                               ) : (
                                 <div className="overflow-x-auto">
-                                  <table className="w-full text-left text-xs">
+                                  <table className="w-full min-w-[640px] text-left text-xs">
                                     <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
                                       <tr>
                                         <th className="px-3.5 py-2.5">Invoice #</th>
@@ -820,68 +820,68 @@ export const ProfileModalProvider: React.FC<{ children: React.ReactNode }> = ({ 
                                   Personal & Academic Information
                                 </h4>
                                 <div className="space-y-2 text-xs">
-                                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                                    <span className="text-slate-500">Full Name:</span>
-                                    <span className="font-semibold text-slate-900">{data.student?.firstName} {data.student?.lastName}</span>
+                                  <div className="flex justify-between items-start gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                    <span className="text-slate-500 shrink-0">Full Name:</span>
+                                    <span className="font-semibold text-slate-900 text-right break-words min-w-0">{data.student?.firstName} {data.student?.lastName}</span>
                                   </div>
-                                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                                    <span className="text-slate-500">Student ID / Code:</span>
-                                    <span className="font-mono font-semibold text-slate-800">{data.student?.studentId}</span>
+                                  <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                    <span className="text-slate-500 shrink-0">Student ID / Code:</span>
+                                    <span className="font-mono font-semibold text-slate-800 text-right truncate">{data.student?.studentId}</span>
                                   </div>
-                                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                                    <span className="text-slate-500">Gender:</span>
-                                    <span className="font-medium text-slate-800">{data.student?.gender || 'Not specified'}</span>
+                                  <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                    <span className="text-slate-500 shrink-0">Gender:</span>
+                                    <span className="font-medium text-slate-800 text-right">{data.student?.gender || 'Not specified'}</span>
                                   </div>
-                                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                                    <span className="text-slate-500">Date of Birth:</span>
-                                    <span className="font-medium text-slate-800">{data.student?.dateOfBirth || 'Not specified'}</span>
+                                  <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                    <span className="text-slate-500 shrink-0">Date of Birth:</span>
+                                    <span className="font-medium text-slate-800 text-right">{data.student?.dateOfBirth || 'Not specified'}</span>
                                   </div>
-                                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                                    <span className="text-slate-500">Admission Date:</span>
-                                    <span className="font-medium text-slate-800">{data.student?.admissionDate || 'N/A'}</span>
+                                  <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                    <span className="text-slate-500 shrink-0">Admission Date:</span>
+                                    <span className="font-medium text-slate-800 text-right">{data.student?.admissionDate || 'N/A'}</span>
                                   </div>
-                                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                                    <span className="text-slate-500">Class Placement:</span>
-                                    <span className="font-semibold text-indigo-700">{data.student?.className || 'Unassigned'}</span>
+                                  <div className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                    <span className="text-slate-500 shrink-0">Class Placement:</span>
+                                    <span className="font-semibold text-indigo-700 text-right truncate">{data.student?.className || 'Unassigned'}</span>
                                   </div>
-                                  <div className="flex justify-between py-1 items-start gap-2">
+                                  <div className="flex justify-between py-1.5 items-start gap-2 min-w-0">
                                     <span className="text-slate-500 shrink-0">Home Address:</span>
-                                    <span className="font-medium text-slate-800 text-right">{data.student?.address || 'Residential Address on file'}</span>
+                                    <span className="font-medium text-slate-800 text-right break-words min-w-0">{data.student?.address || 'Residential Address on file'}</span>
                                   </div>
                                 </div>
                               </div>
 
-                              <div className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50/50">
+                              <div className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50/50 min-w-0">
                                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                                   <Shield className="w-3.5 h-3.5 text-emerald-600" />
                                   Account & Emergency Contact
                                 </h4>
                                 <div className="space-y-2 text-xs">
-                                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                                    <span className="text-slate-500">Portal Account:</span>
-                                    <span className="font-medium text-slate-800">
+                                  <div className="flex justify-between items-start gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                    <span className="text-slate-500 shrink-0">Portal Account:</span>
+                                    <span className="font-medium text-slate-800 text-right break-words min-w-0">
                                       {data.student?.hasAccount ? (
                                         <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold">
-                                          <CheckCircle2 className="w-3.5 h-3.5" /> Registered ({data.student?.accountEmail || 'Active'})
+                                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> Registered ({data.student?.accountEmail || 'Active'})
                                         </span>
                                       ) : (
                                         <span className="text-slate-400 italic">Pending Registration</span>
                                       )}
                                     </span>
                                   </div>
-                                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                                    <span className="text-slate-500">Emergency Contact:</span>
-                                    <span className="font-semibold text-slate-900">{data.student?.emergencyContact || 'None listed'}</span>
+                                  <div className="flex justify-between items-start gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                    <span className="text-slate-500 shrink-0">Emergency Contact:</span>
+                                    <span className="font-semibold text-slate-900 text-right break-words min-w-0">{data.student?.emergencyContact || 'None listed'}</span>
                                   </div>
-                                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                                    <span className="text-slate-500">Primary Guardian:</span>
-                                    <span className="font-semibold text-slate-800">
+                                  <div className="flex justify-between items-start gap-2 py-1.5 border-b border-slate-200/60 min-w-0">
+                                    <span className="text-slate-500 shrink-0">Primary Guardian:</span>
+                                    <span className="font-semibold text-slate-800 text-right break-words min-w-0">
                                       {data.guardians?.[0]?.fullName || 'No Guardian Linked'}
                                     </span>
                                   </div>
-                                  <div className="flex justify-between py-1">
-                                    <span className="text-slate-500">Current Session:</span>
-                                    <span className="font-medium text-slate-800">{data.student?.sessionName || 'Academic Session'}</span>
+                                  <div className="flex justify-between items-center gap-2 py-1.5 min-w-0">
+                                    <span className="text-slate-500 shrink-0">Current Session:</span>
+                                    <span className="font-medium text-slate-800 text-right truncate min-w-0">{data.student?.sessionName || 'Academic Session'}</span>
                                   </div>
                                 </div>
                               </div>

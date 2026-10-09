@@ -881,7 +881,7 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden p-1.5 -ml-1 text-slate-700 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all cursor-pointer flex items-center justify-center border border-stone-200 shadow-2xs active:scale-95"
+              className="lg:hidden h-9 w-9 sm:h-10 sm:w-10 text-slate-700 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all cursor-pointer flex items-center justify-center border border-stone-200 shadow-2xs active:scale-95 shrink-0"
               aria-label="Open Navigation Menu"
             >
               <Menu className="w-4 h-4 sm:w-5 sm:h-5" />

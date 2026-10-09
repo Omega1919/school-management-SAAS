@@ -372,7 +372,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               type="button"
               id="sidebar-mobile-close-btn"
               onClick={onCloseMobile}
-              className="md:hidden p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/80 transition-colors cursor-pointer"
+              className="md:hidden h-10 w-10 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800/80 transition-colors cursor-pointer"
               aria-label="Close sidebar menu"
             >
               <X className="w-5 h-5" />

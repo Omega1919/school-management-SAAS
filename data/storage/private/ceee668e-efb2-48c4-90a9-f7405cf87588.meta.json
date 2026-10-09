@@ -1,0 +1,11 @@
+{
+  "fileId": "ceee668e-efb2-48c4-90a9-f7405cf87588",
+  "storageKey": "private/ceee668e-efb2-48c4-90a9-f7405cf87588.pdf",
+  "filename": "report.pdf",
+  "mimeType": "application/pdf",
+  "size": 127,
+  "category": "admission_document",
+  "isPublic": false,
+  "url": "/api/admissions/documents/ceee668e-efb2-48c4-90a9-f7405cf87588",
+  "createdAt": "2026-10-09T13:27:10.376Z"
+}

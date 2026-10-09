@@ -558,12 +558,30 @@ export const schoolSettings = pgTable('school_settings', {
   attendancePolicy: text('attendance_policy').default('flexible').notNull(), // 'recorder_only' | 'first_scheduled_teacher' | 'flexible'
   termSystem: text('term_system').default('term').notNull(), // 'term' | 'semester'
   levelSystem: text('level_system').default('class').notNull(), // 'class' | 'level' | 'grade' | 'cohort'
+  timetableDays: text('timetable_days').default('Monday,Tuesday,Wednesday,Thursday,Friday').notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 // ============================================================================
-// 17. TIMETABLES & CLASS SCHEDULES
+// 17. TIMETABLES & CONFIGURABLE SCHOOL SCHEDULES
 // ============================================================================
+export const timetablePeriods = pgTable('timetable_periods', {
+  id: serial('id').primaryKey(),
+  periodNumber: integer('period_number').notNull(),
+  label: text('label').notNull(), // e.g. "Period 1", "Morning Break", "Lunch"
+  startTime: text('start_time').notNull(), // e.g. "08:00"
+  endTime: text('end_time').notNull(), // e.g. "08:45"
+  type: text('type').default('lesson').notNull(), // 'lesson' | 'break' | 'lunch' | 'assembly' | 'other'
+  isTeaching: boolean('is_teaching').default(true).notNull(), // false for break/lunch/assembly
+  sortOrder: integer('sort_order').default(0).notNull(),
+  days: text('days').default('Monday,Tuesday,Wednesday,Thursday,Friday').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [
+  index('timetable_periods_number_idx').on(t.periodNumber),
+  index('timetable_periods_type_idx').on(t.type),
+]);
+
 export const timetables = pgTable('timetables', {
   id: serial('id').primaryKey(),
   classId: integer('class_id').references(() => classes.id).notNull(),
@@ -572,7 +590,7 @@ export const timetables = pgTable('timetables', {
   dayOfWeek: text('day_of_week').notNull(), // 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday'
   startTime: text('start_time').notNull(), // e.g. '08:00'
   endTime: text('end_time').notNull(), // e.g. '08:45'
-  periodNumber: integer('period_number').default(1).notNull(), // 1 to 8
+  periodNumber: integer('period_number').default(1).notNull(), // maps to timetablePeriods.periodNumber
   room: text('room').default('Classroom'), // e.g. "Room 101", "Lab 2"
   sessionId: integer('session_id').references(() => academicSessions.id),
   termId: integer('term_id').references(() => academicTerms.id),

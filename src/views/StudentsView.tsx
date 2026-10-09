@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users,
   Search,
@@ -17,6 +17,12 @@ import {
   Shield,
   AlertCircle,
   Eye,
+  Edit2,
+  CheckSquare,
+  Square,
+  RefreshCw,
+  ArrowRightLeft,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { apiRequest } from '../lib/api.ts';
@@ -31,6 +37,8 @@ interface StudentItem {
   userId: number;
   studentCode: string;
   fullName: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   classId: number | null;
   className?: string;
@@ -57,6 +65,31 @@ export const StudentsView: React.FC = () => {
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+
+  // Bulk Selection State
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Bulk Class Transfer Modal
+  const [showBulkClassModal, setShowBulkClassModal] = useState(false);
+  const [targetBulkClassId, setTargetBulkClassId] = useState<string>('');
+
+  // Individual Student Edit Modal State
+  const [editingStudent, setEditingStudent] = useState<StudentItem | null>(null);
+  const [editForm, setEditForm] = useState({
+    firstName: '',
+    lastName: '',
+    gender: 'Male',
+    classId: '',
+    status: 'active' as 'active' | 'suspended' | 'pending',
+    dateOfBirth: '',
+    emergencyContact: '',
+    address: '',
+  });
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Modal State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -92,6 +125,8 @@ export const StudentsView: React.FC = () => {
         userId: st.userId,
         studentCode: st.studentCode || st.studentId,
         fullName: st.fullName || `${st.firstName || ''} ${st.lastName || ''}`.trim(),
+        firstName: st.firstName,
+        lastName: st.lastName,
         email: st.email || '',
         classId: st.classId,
         className: st.className,
@@ -105,8 +140,9 @@ export const StudentsView: React.FC = () => {
       }));
       setStudents(mappedList);
       setClasses(classesRes || []);
-      if (classesRes && classesRes.length > 0 && !newStudent.classId) {
-        setNewStudent((prev) => ({ ...prev, classId: String(classesRes[0].id) }));
+      if (classesRes && classesRes.length > 0) {
+        if (!newStudent.classId) setNewStudent((prev) => ({ ...prev, classId: String(classesRes[0].id) }));
+        if (!targetBulkClassId) setTargetBulkClassId(String(classesRes[0].id));
       }
     } catch (err) {
       console.error('Error fetching students:', err);
@@ -156,21 +192,159 @@ export const StudentsView: React.FC = () => {
     }
   };
 
-  const filteredStudents = students.filter((s) => {
-    const matchesSearch =
-      s.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.studentCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.email?.toLowerCase().includes(searchQuery.toLowerCase());
+  // Selection handlers
+  const toggleSelectStudent = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
-    const matchesClass =
-      selectedClassFilter === 'all' ||
-      (s.classId !== null && String(s.classId) === selectedClassFilter);
+  const toggleSelectAllFiltered = () => {
+    if (selectedIds.size === filteredStudents.length && filteredStudents.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredStudents.map((s) => s.id)));
+    }
+  };
 
-    const matchesStatus =
-      selectedStatusFilter === 'all' || s.status === selectedStatusFilter;
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+  };
 
-    return matchesSearch && matchesClass && matchesStatus;
-  });
+  // Bulk Actions
+  const handleBulkStatusUpdate = async (newStatus: 'active' | 'suspended') => {
+    if (selectedIds.size === 0) return;
+    try {
+      setBulkActionLoading(true);
+      setActionError(null);
+      setActionSuccess(null);
+
+      const res = await apiRequest<any>('/students/bulk-update', {
+        method: 'POST',
+        body: JSON.stringify({
+          studentIds: Array.from(selectedIds),
+          status: newStatus,
+        }),
+      });
+
+      setActionSuccess(`Successfully updated status to "${newStatus}" for ${res.updatedCount || selectedIds.size} student(s).`);
+      setTimeout(() => setActionSuccess(null), 4000);
+      clearSelection();
+      await loadData();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to update student statuses.');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkClassReassign = async () => {
+    if (selectedIds.size === 0 || !targetBulkClassId) return;
+    try {
+      setBulkActionLoading(true);
+      setActionError(null);
+      setActionSuccess(null);
+
+      const res = await apiRequest<any>('/students/bulk-update', {
+        method: 'POST',
+        body: JSON.stringify({
+          studentIds: Array.from(selectedIds),
+          classId: parseInt(targetBulkClassId, 10),
+        }),
+      });
+
+      const targetClass = classes.find((c) => String(c.id) === targetBulkClassId);
+      setActionSuccess(`Successfully moved ${res.updatedCount || selectedIds.size} student(s) to ${targetClass?.name || 'new class'}.`);
+      setTimeout(() => setActionSuccess(null), 4000);
+      setShowBulkClassModal(false);
+      clearSelection();
+      await loadData();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to reassign students to selected class.');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  // Open Individual Edit Modal
+  const openEditModal = (st: StudentItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nameParts = (st.fullName || '').split(' ');
+    const fName = st.firstName || nameParts[0] || '';
+    const lName = st.lastName || nameParts.slice(1).join(' ') || '';
+
+    setEditingStudent(st);
+    setEditForm({
+      firstName: fName,
+      lastName: lName,
+      gender: st.gender || 'Male',
+      classId: st.classId ? String(st.classId) : '',
+      status: st.status || 'active',
+      dateOfBirth: st.dateOfBirth || '',
+      emergencyContact: st.emergencyContactName || '',
+      address: st.address || '',
+    });
+    setEditError(null);
+  };
+
+  const handleSaveIndividualEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStudent) return;
+
+    try {
+      setEditLoading(true);
+      setEditError(null);
+
+      await apiRequest(`/students/${editingStudent.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          firstName: editForm.firstName.trim(),
+          lastName: editForm.lastName.trim(),
+          gender: editForm.gender,
+          classId: editForm.classId ? parseInt(editForm.classId, 10) : null,
+          status: editForm.status,
+          dateOfBirth: editForm.dateOfBirth || undefined,
+          emergencyContact: editForm.emergencyContact.trim() || undefined,
+          address: editForm.address.trim() || undefined,
+        }),
+      });
+
+      setActionSuccess(`Student record for ${editForm.firstName} ${editForm.lastName} updated successfully.`);
+      setTimeout(() => setActionSuccess(null), 4000);
+      setEditingStudent(null);
+      await loadData();
+    } catch (err: any) {
+      setEditError(err.message || 'Failed to update student record.');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const filteredStudents = useMemo(() => {
+    return students.filter((s) => {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch =
+        s.fullName?.toLowerCase().includes(q) ||
+        s.studentCode?.toLowerCase().includes(q) ||
+        s.email?.toLowerCase().includes(q);
+
+      const matchesClass =
+        selectedClassFilter === 'all' ||
+        (s.classId !== null && String(s.classId) === selectedClassFilter);
+
+      const matchesStatus =
+        selectedStatusFilter === 'all' || s.status === selectedStatusFilter;
+
+      return matchesSearch && matchesClass && matchesStatus;
+    });
+  }, [students, searchQuery, selectedClassFilter, selectedStatusFilter]);
 
   const totalPages = Math.ceil(filteredStudents.length / pageSize) || 1;
   const paginatedStudents = filteredStudents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -178,6 +352,9 @@ export const StudentsView: React.FC = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, selectedClassFilter, selectedStatusFilter]);
+
+  const isAllSelected = filteredStudents.length > 0 && selectedIds.size === filteredStudents.length;
+  const isPartiallySelected = selectedIds.size > 0 && selectedIds.size < filteredStudents.length;
 
   return (
     <div className="space-y-6">
@@ -204,6 +381,31 @@ export const StudentsView: React.FC = () => {
         )}
       </div>
 
+      {/* Notifications / Alerts */}
+      {actionSuccess && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-xl flex items-center justify-between animate-in fade-in">
+          <span className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            {actionSuccess}
+          </span>
+          <button onClick={() => setActionSuccess(null)} className="text-emerald-600 hover:text-emerald-900 cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {actionError && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold rounded-xl flex items-center justify-between animate-in fade-in">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            {actionError}
+          </span>
+          <button onClick={() => setActionError(null)} className="text-rose-600 hover:text-rose-900 cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Search and Filters Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-stretch md:items-center gap-3">
         <div className="relative flex-1">
@@ -221,7 +423,7 @@ export const StudentsView: React.FC = () => {
           <select
             value={selectedClassFilter}
             onChange={(e) => setSelectedClassFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-purple-500 cursor-pointer"
           >
             <option value="all">All Classes</option>
             {classes.map((c) => (
@@ -234,7 +436,7 @@ export const StudentsView: React.FC = () => {
           <select
             value={selectedStatusFilter}
             onChange={(e) => setSelectedStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-purple-500 cursor-pointer"
           >
             <option value="all">All Statuses</option>
             <option value="active">Active</option>
@@ -242,6 +444,67 @@ export const StudentsView: React.FC = () => {
           </select>
         </div>
       </div>
+
+      {/* Floating / Sticky Bulk Action Bar (Visible when 1+ students are selected) */}
+      {isSuperAdmin && selectedIds.size > 0 && (
+        <div className="sticky top-16 z-20 bg-purple-900 text-white rounded-2xl p-3 sm:p-4 shadow-xl border border-purple-800 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3">
+            <span className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center font-bold text-xs">
+              {selectedIds.size}
+            </span>
+            <div>
+              <p className="text-xs sm:text-sm font-bold leading-tight">
+                {selectedIds.size} student{selectedIds.size > 1 ? 's' : ''} selected
+              </p>
+              <p className="text-[11px] text-purple-200 hidden sm:block">
+                Choose an action below to update all selected students simultaneously
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => handleBulkStatusUpdate('active')}
+              disabled={bulkActionLoading}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+            >
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>Mark Active</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleBulkStatusUpdate('suspended')}
+              disabled={bulkActionLoading}
+              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              <span>Suspend</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowBulkClassModal(true)}
+              disabled={bulkActionLoading}
+              className="px-3 py-1.5 bg-white/20 hover:bg-white/30 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>Move Class</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={clearSelection}
+              disabled={bulkActionLoading}
+              className="p-1.5 text-purple-200 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+              title="Deselect all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Student Table */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
@@ -261,6 +524,26 @@ export const StudentsView: React.FC = () => {
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200/80 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  {isSuperAdmin && (
+                    <th className="py-3 px-3 w-10 text-center">
+                      <button
+                        type="button"
+                        onClick={toggleSelectAllFiltered}
+                        className="text-slate-400 hover:text-purple-600 cursor-pointer flex items-center justify-center mx-auto"
+                        title={isAllSelected ? 'Deselect all' : 'Select all filtered'}
+                      >
+                        {isAllSelected ? (
+                          <CheckSquare className="w-4 h-4 text-purple-600" />
+                        ) : isPartiallySelected ? (
+                          <div className="w-4 h-4 bg-purple-100 border border-purple-600 rounded flex items-center justify-center">
+                            <div className="w-2 h-0.5 bg-purple-600" />
+                          </div>
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
+                    </th>
+                  )}
                   <th className="py-3 px-4">Student ID</th>
                   <th className="py-3 px-4">Full Name</th>
                   <th className="py-3 px-4">Class</th>
@@ -271,64 +554,101 @@ export const StudentsView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {paginatedStudents.map((st) => (
-                  <tr
-                    key={st.id}
-                    className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
-                    onClick={() => openStudentProfile(st.id)}
-                  >
-                    <td className="py-3 px-4 font-mono font-bold text-xs text-purple-700">
-                      {st.studentCode}
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-slate-900">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-purple-100 text-purple-700 font-bold text-xs flex items-center justify-center">
-                          {st.fullName.charAt(0)}
-                        </div>
-                        <div>
-                          <span>{st.fullName}</span>
-                          {st.email && (
-                            <p className="text-[11px] text-slate-400 font-normal">{st.email}</p>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-slate-600">
-                      <span className="px-2.5 py-1 rounded-lg bg-slate-100 font-medium text-xs text-slate-700 border border-slate-200/60">
-                        {st.className || 'Unassigned'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-600">{st.gender}</td>
-                    <td className="py-3 px-4">
-                      <Badge
-                        status={st.status === 'active' ? 'success' : 'danger'}
-                        label={st.status.toUpperCase()}
-                      />
-                    </td>
-                    <td className="py-3 px-4 text-slate-600 text-xs">
-                      {st.emergencyContactName ? (
-                        <div>
-                          <p className="font-medium text-slate-800">{st.emergencyContactName}</p>
-                          <p className="text-slate-400">{st.emergencyContactPhone || 'No phone'}</p>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400">None linked</span>
+                {paginatedStudents.map((st) => {
+                  const isSelected = selectedIds.has(st.id);
+                  return (
+                    <tr
+                      key={st.id}
+                      className={`hover:bg-slate-50/80 transition-colors cursor-pointer group ${
+                        isSelected ? 'bg-purple-50/60' : ''
+                      }`}
+                      onClick={() => openStudentProfile(st.id)}
+                    >
+                      {isSuperAdmin && (
+                        <td
+                          className="py-3 px-3 w-10 text-center"
+                          onClick={(e) => toggleSelectStudent(st.id, e)}
+                        >
+                          <button
+                            type="button"
+                            className="cursor-pointer text-slate-400 hover:text-purple-600 flex items-center justify-center mx-auto"
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-4 h-4 text-purple-600" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        </td>
                       )}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openStudentProfile(st.id);
-                        }}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors cursor-pointer inline-flex items-center gap-1 text-xs font-semibold"
-                      >
-                        <Eye className="w-4 h-4" />
-                        <span className="hidden sm:inline">Profile</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="py-3 px-4 font-mono font-bold text-xs text-purple-700">
+                        {st.studentCode}
+                      </td>
+                      <td className="py-3 px-4 font-semibold text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-purple-100 text-purple-700 font-bold text-xs flex items-center justify-center shrink-0">
+                            {st.fullName.charAt(0)}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="truncate block">{st.fullName}</span>
+                            {st.email && (
+                              <p className="text-[11px] text-slate-400 font-normal truncate">{st.email}</p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-slate-600">
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 font-medium text-xs text-slate-700 border border-slate-200/60 whitespace-nowrap">
+                          {st.className || 'Unassigned'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 whitespace-nowrap">{st.gender}</td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <Badge
+                          status={st.status === 'active' ? 'success' : 'danger'}
+                          label={st.status.toUpperCase()}
+                        />
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 text-xs">
+                        {st.emergencyContactName ? (
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-800 truncate">{st.emergencyContactName}</p>
+                            <p className="text-slate-400 truncate">{st.emergencyContactPhone || 'No phone'}</p>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">None linked</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          {isSuperAdmin && (
+                            <button
+                              type="button"
+                              onClick={(e) => openEditModal(st, e)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer inline-flex items-center gap-1 text-xs font-semibold"
+                              title="Edit Student Details"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                              <span className="hidden lg:inline">Edit</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openStudentProfile(st.id);
+                            }}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors cursor-pointer inline-flex items-center gap-1 text-xs font-semibold"
+                            title="View Student Profile"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Profile</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

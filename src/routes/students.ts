@@ -547,6 +547,113 @@ studentsRouter.post('/bulk-promote', requireAuth, requireRole(['super_admin']), 
   }
 });
 
+// 6b. POST /api/students/bulk-update - Bulk update status or class for selected students
+studentsRouter.post('/bulk-update', requireAuth, requireRole(['super_admin']), async (req: AuthRequest, res: Response) => {
+  try {
+    const { studentIds, status, classId } = req.body;
+
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return res.status(400).json({ error: 'At least one student ID must be selected for bulk update.' });
+    }
+
+    const cleanIds = studentIds
+      .map((id: any) => (typeof id === 'number' ? id : parseInt(String(id), 10)))
+      .filter((id: number) => !isNaN(id) && id > 0);
+
+    if (cleanIds.length === 0) {
+      return res.status(400).json({ error: 'No valid student IDs provided.' });
+    }
+
+    if (!status && classId === undefined) {
+      return res.status(400).json({ error: 'Please provide either a status or a classId to update.' });
+    }
+
+    const updatePayload: Record<string, any> = {
+      updatedAt: new Date(),
+    };
+
+    if (status) {
+      if (!['active', 'suspended', 'pending'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status. Must be active, suspended, or pending.' });
+      }
+      updatePayload.status = status;
+    }
+
+    if (classId !== undefined) {
+      const parsedClassId = classId ? parseInt(String(classId), 10) : null;
+      if (parsedClassId !== null) {
+        const [targetClass] = await db
+          .select({ id: classes.id, name: classes.name })
+          .from(classes)
+          .where(and(eq(classes.id, parsedClassId), eq(classes.status, 'active')))
+          .limit(1);
+
+        if (!targetClass) {
+          return res.status(400).json({ error: 'Selected destination class is inactive or does not exist.' });
+        }
+      }
+      updatePayload.classId = parsedClassId;
+    }
+
+    // Verify existence of target students
+    const existingStudents = await db
+      .select({ id: students.id, currentSessionId: students.currentSessionId, classId: students.classId })
+      .from(students)
+      .where(inArray(students.id, cleanIds));
+
+    if (existingStudents.length === 0) {
+      return res.status(404).json({ error: 'None of the selected students were found in the database.' });
+    }
+
+    const validIds = existingStudents.map((s) => s.id);
+
+    await db
+      .update(students)
+      .set(updatePayload)
+      .where(inArray(students.id, validIds));
+
+    // If status was updated, also synchronize corresponding user status
+    if (status) {
+      const studentUserRows = await db
+        .select({ userId: students.userId })
+        .from(students)
+        .where(inArray(students.id, validIds));
+
+      const userIds = studentUserRows.map((r) => r.userId).filter((uid): uid is number => uid !== null);
+      if (userIds.length > 0) {
+        await db
+          .update(users)
+          .set({ status, updatedAt: new Date() })
+          .where(inArray(users.id, userIds));
+      }
+    }
+
+    await logAuditEvent({
+      userId: req.user!.id,
+      userEmail: req.user!.email,
+      role: req.user!.role,
+      action: 'STUDENTS_BULK_UPDATE',
+      resource: 'students',
+      resourceId: validIds.join(','),
+      details: {
+        affectedCount: validIds.length,
+        studentIds: validIds,
+        changes: { status, classId },
+      },
+      ipAddress: req.ip,
+    });
+
+    return res.json({
+      success: true,
+      updatedCount: validIds.length,
+      message: `Successfully updated ${validIds.length} student record${validIds.length > 1 ? 's' : ''}.`,
+    });
+  } catch (error: any) {
+    console.error('Bulk update students error:', error);
+    return res.status(500).json({ error: 'Failed to process bulk student updates.' });
+  }
+});
+
 // 7. GET /api/students/:id & GET /api/students/:id/overview - Detailed student profile with strict RBAC
 const handleStudentProfile = async (req: AuthRequest, res: Response, isOverviewOnly = false) => {
   try {

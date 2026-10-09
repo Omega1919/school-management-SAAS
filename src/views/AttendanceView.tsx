@@ -559,28 +559,29 @@ export const AttendanceView: React.FC = () => {
       )}
 
       {/* FILTER & ROLL-CALL ACTION TOOLBAR */}
-      <div className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-2xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {/* Left Side: Selectors & Session Info */}
+        <div className="flex flex-wrap items-end gap-3 sm:gap-4 flex-1 min-w-0">
+          <div className="w-full sm:w-auto min-w-0 flex-1 sm:flex-initial sm:max-w-xs">
+            <label htmlFor="attendance-class-select" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
               Select Class
             </label>
             <select
               id="attendance-class-select"
               value={selectedClassId}
               onChange={(e) => setSelectedClassId(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 font-semibold focus:outline-hidden focus:border-indigo-500 cursor-pointer"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-800 font-semibold focus:outline-hidden focus:ring-2 focus:ring-purple-500 cursor-pointer min-h-[40px] truncate"
             >
               {classes.map((c) => (
                 <option key={c.id} value={c.id.toString()}>
-                  {c.name} {c.classTeacherName ? `(Teacher: ${c.classTeacherName})` : ''}
+                  {c.name} {c.classTeacherName ? `(${c.classTeacherName})` : ''}
                 </option>
               ))}
             </select>
           </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+          <div className="w-full sm:w-auto shrink-0">
+            <label htmlFor="attendance-date-input" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
               Attendance Date
             </label>
             <input
@@ -588,22 +589,30 @@ export const AttendanceView: React.FC = () => {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 font-semibold focus:outline-hidden focus:border-indigo-500 cursor-pointer"
+              className="w-full sm:w-auto px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-800 font-semibold focus:outline-hidden focus:ring-2 focus:ring-purple-500 cursor-pointer min-h-[40px]"
             />
+          </div>
+
+          {/* Academic Session / Term Badge */}
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-900 border border-purple-200 rounded-xl text-xs font-semibold shrink-0 min-h-[40px]">
+            <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+            <span className="truncate max-w-[160px] sm:max-w-none">
+              {currentClassDetail?.sessionName || '2025/2026 Academic Session'}
+            </span>
           </div>
 
           {/* Submission status badge */}
           {activeTab === 'rollcall' && (
-            <div className="self-end pb-0.5">
+            <div className="shrink-0">
               {isClassSubmitted ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-semibold">
-                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold min-h-[40px]">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>Submitted {submissionMeta?.submittedByName ? `by ${submissionMeta.submittedByName}` : ''}</span>
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-xs font-semibold">
-                  <Clock className="w-4 h-4 text-amber-600" />
-                  <span>Register Pending Submission</span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-semibold min-h-[40px]">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Pending Daily Submission</span>
                 </span>
               )}
             </div>
@@ -612,19 +621,19 @@ export const AttendanceView: React.FC = () => {
 
         {/* FAST ATTENDANCE CONTROLS */}
         {activeTab === 'rollcall' && isStaff && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 self-start lg:self-center shrink-0">
             {!canRecordDailyAttendance ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-semibold">
                 <Eye className="w-3.5 h-3.5 text-slate-500" />
                 <span>View-Only Mode (Subject Teacher)</span>
               </span>
             ) : canEditRegister ? (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <button
                   id="btn-mark-all-present"
                   onClick={markAllPresent}
                   type="button"
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer min-h-[40px]"
                   title="Mark all students present in one click. Then easily change the few exceptions."
                 >
                   <Check className="w-4 h-4" />
@@ -634,7 +643,7 @@ export const AttendanceView: React.FC = () => {
                   id="save-attendance-btn"
                   onClick={() => handleSaveAttendance(false)}
                   disabled={saving || rollCallEntries.length === 0}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer min-h-[40px]"
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>{saving ? 'Saving...' : 'Save Draft'}</span>
@@ -643,7 +652,7 @@ export const AttendanceView: React.FC = () => {
                   id="submit-register-btn"
                   onClick={() => setShowSubmitConfirmModal(true)}
                   disabled={saving || rollCallEntries.length === 0}
-                  className="flex items-center gap-1.5 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-500/20 transition-all cursor-pointer min-h-[40px]"
                 >
                   {saveSuccess ? (
                     <>
@@ -672,43 +681,43 @@ export const AttendanceView: React.FC = () => {
 
       {/* QUICK SUMMARY COUNTERS */}
       {activeTab === 'rollcall' && rollCallEntries.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <div className="bg-white p-3 rounded-xl border border-slate-200">
-            <div className="text-[10px] font-bold uppercase text-slate-400">Total Students</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Students</div>
             <div className="text-xl font-black text-slate-800 mt-0.5">{rollCallEntries.length}</div>
           </div>
-          <div className="bg-white p-3 rounded-xl border border-emerald-100 bg-emerald-50/20">
-            <div className="text-[10px] font-bold uppercase text-emerald-600">Present</div>
-            <div className="text-xl font-black text-emerald-700 mt-0.5">{presentCount}</div>
+          <div className="bg-emerald-50/60 p-3.5 rounded-2xl border border-emerald-200/80 shadow-xs">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Present</div>
+            <div className="text-xl font-black text-emerald-800 mt-0.5">{presentCount}</div>
           </div>
-          <div className="bg-white p-3 rounded-xl border border-amber-100 bg-amber-50/20">
-            <div className="text-[10px] font-bold uppercase text-amber-600">Late Arrivals</div>
-            <div className="text-xl font-black text-amber-700 mt-0.5">{lateCount}</div>
-            <div className="text-[10px] text-amber-600/80">Counted as Present</div>
+          <div className="bg-amber-50/60 p-3.5 rounded-2xl border border-amber-200/80 shadow-xs">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Late Arrivals</div>
+            <div className="text-xl font-black text-amber-800 mt-0.5">{lateCount}</div>
+            <div className="text-[10px] text-amber-600 font-medium">Counted as Present</div>
           </div>
-          <div className="bg-white p-3 rounded-xl border border-rose-100 bg-rose-50/20">
-            <div className="text-[10px] font-bold uppercase text-rose-600">Absent</div>
-            <div className="text-xl font-black text-rose-700 mt-0.5">{absentCount}</div>
+          <div className="bg-rose-50/60 p-3.5 rounded-2xl border border-rose-200/80 shadow-xs">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Absent</div>
+            <div className="text-xl font-black text-rose-800 mt-0.5">{absentCount}</div>
           </div>
-          <div className="bg-white p-3 rounded-xl border border-blue-100 bg-blue-50/20">
-            <div className="text-[10px] font-bold uppercase text-blue-600">Excused Absence</div>
-            <div className="text-xl font-black text-blue-700 mt-0.5">{excusedCount}</div>
+          <div className="col-span-2 sm:col-span-1 bg-blue-50/60 p-3.5 rounded-2xl border border-blue-200/80 shadow-xs">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Excused Absence</div>
+            <div className="text-xl font-black text-blue-800 mt-0.5">{excusedCount}</div>
           </div>
         </div>
       )}
 
       {/* TAB 1: DAILY ROLL-CALL ROSTER */}
       {activeTab === 'rollcall' && (
-        <div className="bg-white rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full min-w-[720px] text-left border-collapse">
               <thead>
-                <tr className="bg-slate-50/75 border-b border-slate-200/80 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-                  <th className="px-5 py-3">Student Name & ID</th>
-                  <th className="px-5 py-3">Attendance Status</th>
-                  <th className="px-5 py-3">Punctuality / Lateness</th>
-                  <th className="px-5 py-3">Teacher Remarks</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
+                <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
+                  <th className="px-5 py-3.5">Student Name & ID</th>
+                  <th className="px-5 py-3.5">Attendance Status</th>
+                  <th className="px-5 py-3.5">Punctuality / Lateness</th>
+                  <th className="px-5 py-3.5">Teacher Remarks</th>
+                  <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
@@ -757,7 +766,7 @@ export const AttendanceView: React.FC = () => {
                                   key={st}
                                   type="button"
                                   onClick={() => handleStatusChange(entry.studentId, st)}
-                                  className={`px-3 py-1 rounded-md text-xs transition-all cursor-pointer ${colors}`}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer min-h-[34px] flex items-center justify-center ${colors}`}
                                 >
                                   {st === 'Excused' ? 'Excused Absence' : st}
                                 </button>

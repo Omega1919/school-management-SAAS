@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { db, withDbRetry } from '../db/index.ts';
 import {
   timetables,
+  timetablePeriods,
+  schoolSettings,
   classes,
   subjects,
   teachers,
@@ -13,11 +15,11 @@ import {
 } from '../db/schema.ts';
 import { AuthRequest, requireAuth, requireRole, hasPermission, requireRoleOrPermission } from '../middleware/auth.ts';
 import { logAuditEvent } from '../lib/audit.ts';
-import { eq, and, ne, asc } from 'drizzle-orm';
+import { eq, and, ne, asc, inArray } from 'drizzle-orm';
 
 export const timetableRouter = Router();
 
-// Standard 8 periods template (08:00 - 15:15 with Assembly, Morning Break & Lunch)
+// Standard default 8 periods template fallback
 export const STANDARD_PERIODS = [
   { periodNumber: 1, startTime: '08:00', endTime: '08:45', label: 'Period 1' },
   { periodNumber: 2, startTime: '08:45', endTime: '09:30', label: 'Period 2' },
@@ -30,9 +32,47 @@ export const STANDARD_PERIODS = [
 ];
 
 export const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
+export const ALL_POSSIBLE_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
 
-function isValidTimeFormat(time: string): boolean {
+export function isValidTimeFormat(time: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(time.trim());
+}
+
+/**
+ * Returns dynamic school timetable schedule and periods from PostgreSQL database.
+ */
+export async function getActiveSchoolSchedule() {
+  const [settings] = await db.select({ timetableDays: schoolSettings.timetableDays }).from(schoolSettings).limit(1);
+  const daysList = (settings?.timetableDays ? settings.timetableDays.split(',') : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
+    .map((d) => d.trim())
+    .filter(Boolean);
+
+  const periods = await db
+    .select()
+    .from(timetablePeriods)
+    .orderBy(asc(timetablePeriods.sortOrder), asc(timetablePeriods.startTime));
+
+  if (periods.length === 0) {
+    return {
+      days: daysList,
+      periods: STANDARD_PERIODS.map((p) => ({
+        id: p.periodNumber,
+        periodNumber: p.periodNumber,
+        label: p.label,
+        startTime: p.startTime,
+        endTime: p.endTime,
+        type: 'lesson',
+        isTeaching: true,
+        sortOrder: p.periodNumber,
+        days: daysList.join(','),
+      })),
+    };
+  }
+
+  return {
+    days: daysList,
+    periods,
+  };
 }
 
 // ============================================================================
@@ -135,6 +175,8 @@ timetableRouter.get('/meta', requireAuth, async (req: AuthRequest, res: Response
       .where(eq(teachers.status, 'active'))
       .orderBy(asc(users.fullName));
 
+    const schedule = await getActiveSchoolSchedule();
+
     return res.json({
       role: userRole,
       accessibleClasses,
@@ -142,12 +184,292 @@ timetableRouter.get('/meta', requireAuth, async (req: AuthRequest, res: Response
       canEdit: userRole === 'super_admin',
       subjects: allSubjects,
       teachers: allTeachers,
-      periods: STANDARD_PERIODS,
-      days: DAYS_OF_WEEK,
+      periods: schedule.periods,
+      days: schedule.days,
     });
   } catch (error: any) {
     console.error('Error fetching timetable metadata:', error);
     return res.status(500).json({ error: 'Failed to retrieve timetable metadata' });
+  }
+});
+
+// ============================================================================
+// 1b. GET /api/timetable/periods - Returns configured schedule periods & days
+// ============================================================================
+timetableRouter.get('/periods', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const schedule = await getActiveSchoolSchedule();
+    return res.json(schedule);
+  } catch (error: any) {
+    console.error('Error fetching timetable periods:', error);
+    return res.status(500).json({ error: 'Failed to retrieve timetable periods.' });
+  }
+});
+
+// ============================================================================
+// 1c. POST /api/timetable/periods - Admin creates a new schedule period
+// ============================================================================
+timetableRouter.post('/periods', requireAuth, requireRole(['super_admin']), async (req: AuthRequest, res: Response) => {
+  try {
+    const { periodNumber, label, startTime, endTime, type, isTeaching, sortOrder, days } = req.body;
+
+    if (!label || !String(label).trim()) {
+      return res.status(400).json({ error: 'Period label/name is required.' });
+    }
+
+    if (!startTime || !endTime || !isValidTimeFormat(startTime) || !isValidTimeFormat(endTime)) {
+      return res.status(400).json({ error: 'Start and end times must be in valid HH:MM 24-hour format.' });
+    }
+
+    const cleanStart = String(startTime).trim();
+    const cleanEnd = String(endTime).trim();
+
+    if (cleanStart >= cleanEnd) {
+      return res.status(400).json({ error: 'Start time must be strictly before end time.' });
+    }
+
+    const periodType = type || (isTeaching === false ? 'break' : 'lesson');
+    const teachingBool = isTeaching !== undefined ? Boolean(isTeaching) : periodType === 'lesson';
+
+    const parsedPeriodNumber = periodNumber !== undefined ? parseInt(String(periodNumber), 10) : 0;
+    if (isNaN(parsedPeriodNumber) || parsedPeriodNumber < 0) {
+      return res.status(400).json({ error: 'Period number must be a valid non-negative number.' });
+    }
+
+    // Check for overlapping period in the same schedule
+    const existingPeriods = await db.select().from(timetablePeriods);
+    for (const ep of existingPeriods) {
+      if (cleanStart < ep.endTime && cleanEnd > ep.startTime) {
+        return res.status(400).json({
+          error: `Time overlap conflict: New period (${cleanStart} - ${cleanEnd}) overlaps with existing period "${ep.label}" (${ep.startTime} - ${ep.endTime}).`,
+        });
+      }
+    }
+
+    // Compute sortOrder if not provided
+    const computedSortOrder = sortOrder !== undefined ? parseInt(String(sortOrder), 10) : existingPeriods.length + 1;
+
+    const [inserted] = await withDbRetry<any[]>(() =>
+      db
+        .insert(timetablePeriods)
+        .values({
+          periodNumber: parsedPeriodNumber,
+          label: String(label).trim(),
+          startTime: cleanStart,
+          endTime: cleanEnd,
+          type: periodType,
+          isTeaching: teachingBool,
+          sortOrder: isNaN(computedSortOrder) ? 0 : computedSortOrder,
+          days: days ? String(days).trim() : 'Monday,Tuesday,Wednesday,Thursday,Friday',
+        })
+        .returning()
+    );
+
+    await logAuditEvent({
+      userId: req.user!.id,
+      userEmail: req.user!.email,
+      role: req.user!.role,
+      action: 'CREATE_TIMETABLE_PERIOD',
+      resource: 'timetable_periods',
+      resourceId: String(inserted.id),
+      details: inserted,
+      ipAddress: req.ip,
+    });
+
+    return res.status(201).json({
+      message: 'Schedule period created successfully.',
+      period: inserted,
+    });
+  } catch (error: any) {
+    console.error('Error creating timetable period:', error);
+    return res.status(500).json({ error: 'Failed to create schedule period.' });
+  }
+});
+
+// ============================================================================
+// 1d. PUT /api/timetable/periods/:id - Admin updates a schedule period
+// ============================================================================
+timetableRouter.put('/periods/:id', requireAuth, requireRole(['super_admin']), async (req: AuthRequest, res: Response) => {
+  try {
+    const periodId = parseInt(req.params.id, 10);
+    if (isNaN(periodId) || periodId <= 0) {
+      return res.status(400).json({ error: 'Invalid period ID.' });
+    }
+
+    const [existing] = await db.select().from(timetablePeriods).where(eq(timetablePeriods.id, periodId)).limit(1);
+    if (!existing) {
+      return res.status(404).json({ error: 'Schedule period not found.' });
+    }
+
+    const { periodNumber, label, startTime, endTime, type, isTeaching, sortOrder, days } = req.body;
+
+    const newStart = startTime !== undefined ? String(startTime).trim() : existing.startTime;
+    const newEnd = endTime !== undefined ? String(endTime).trim() : existing.endTime;
+
+    if (!isValidTimeFormat(newStart) || !isValidTimeFormat(newEnd)) {
+      return res.status(400).json({ error: 'Start and end times must be in valid HH:MM 24-hour format.' });
+    }
+
+    if (newStart >= newEnd) {
+      return res.status(400).json({ error: 'Start time must be strictly before end time.' });
+    }
+
+    const newType = type !== undefined ? type : existing.type;
+    const newIsTeaching = isTeaching !== undefined ? Boolean(isTeaching) : existing.isTeaching;
+    const newPeriodNum = periodNumber !== undefined ? parseInt(String(periodNumber), 10) : existing.periodNumber;
+
+    // Check for time overlap with any other period
+    const otherPeriods = await db.select().from(timetablePeriods).where(ne(timetablePeriods.id, periodId));
+    for (const op of otherPeriods) {
+      if (newStart < op.endTime && newEnd > op.startTime) {
+        return res.status(400).json({
+          error: `Time overlap conflict: Updated times (${newStart} - ${newEnd}) overlap with period "${op.label}" (${op.startTime} - ${op.endTime}).`,
+        });
+      }
+    }
+
+    const [updated] = await withDbRetry<any[]>(() =>
+      db
+        .update(timetablePeriods)
+        .set({
+          periodNumber: isNaN(newPeriodNum) ? existing.periodNumber : newPeriodNum,
+          label: label !== undefined ? String(label).trim() : existing.label,
+          startTime: newStart,
+          endTime: newEnd,
+          type: newType,
+          isTeaching: newIsTeaching,
+          sortOrder: sortOrder !== undefined ? parseInt(String(sortOrder), 10) : existing.sortOrder,
+          days: days !== undefined ? String(days).trim() : existing.days,
+          updatedAt: new Date(),
+        })
+        .where(eq(timetablePeriods.id, periodId))
+        .returning()
+    );
+
+    // If times changed, sync times in existing timetable slots for this period number
+    if (newStart !== existing.startTime || newEnd !== existing.endTime) {
+      await db
+        .update(timetables)
+        .set({ startTime: newStart, endTime: newEnd, updatedAt: new Date() })
+        .where(eq(timetables.periodNumber, existing.periodNumber));
+    }
+
+    await logAuditEvent({
+      userId: req.user!.id,
+      userEmail: req.user!.email,
+      role: req.user!.role,
+      action: 'UPDATE_TIMETABLE_PERIOD',
+      resource: 'timetable_periods',
+      resourceId: String(periodId),
+      details: { previous: existing, updated },
+      ipAddress: req.ip,
+    });
+
+    return res.json({
+      message: 'Schedule period updated successfully.',
+      period: updated,
+    });
+  } catch (error: any) {
+    console.error('Error updating timetable period:', error);
+    return res.status(500).json({ error: 'Failed to update schedule period.' });
+  }
+});
+
+// ============================================================================
+// 1e. DELETE /api/timetable/periods/:id - Admin deletes a schedule period
+// ============================================================================
+timetableRouter.delete('/periods/:id', requireAuth, requireRole(['super_admin']), async (req: AuthRequest, res: Response) => {
+  try {
+    const periodId = parseInt(req.params.id, 10);
+    if (isNaN(periodId) || periodId <= 0) {
+      return res.status(400).json({ error: 'Invalid period ID.' });
+    }
+
+    const [existing] = await db.select().from(timetablePeriods).where(eq(timetablePeriods.id, periodId)).limit(1);
+    if (!existing) {
+      return res.status(404).json({ error: 'Schedule period not found.' });
+    }
+
+    // Safety check: Prevent deletion if active timetable entries exist for this period number
+    const [existingSlot] = await db
+      .select({ id: timetables.id, classId: timetables.classId })
+      .from(timetables)
+      .where(eq(timetables.periodNumber, existing.periodNumber))
+      .limit(1);
+
+    if (existingSlot) {
+      return res.status(400).json({
+        error: `Cannot delete "${existing.label}" (Period ${existing.periodNumber}) because active classes have scheduled lessons in it. Please remove or reassign class timetable slots first to prevent orphan records.`,
+      });
+    }
+
+    await db.delete(timetablePeriods).where(eq(timetablePeriods.id, periodId));
+
+    await logAuditEvent({
+      userId: req.user!.id,
+      userEmail: req.user!.email,
+      role: req.user!.role,
+      action: 'DELETE_TIMETABLE_PERIOD',
+      resource: 'timetable_periods',
+      resourceId: String(periodId),
+      details: existing,
+      ipAddress: req.ip,
+    });
+
+    return res.json({
+      message: `Period "${existing.label}" removed successfully.`,
+    });
+  } catch (error: any) {
+    console.error('Error deleting timetable period:', error);
+    return res.status(500).json({ error: 'Failed to delete schedule period.' });
+  }
+});
+
+// ============================================================================
+// 1f. PUT /api/timetable/schedule-days - Admin updates school days of week
+// ============================================================================
+timetableRouter.put('/schedule-days', requireAuth, requireRole(['super_admin']), async (req: AuthRequest, res: Response) => {
+  try {
+    const { days } = req.body;
+    if (!Array.isArray(days) || days.length === 0) {
+      return res.status(400).json({ error: 'Days must be a non-empty array of school day names.' });
+    }
+
+    const validDays = days.filter((d: string) => ALL_POSSIBLE_DAYS.includes(d as any));
+    if (validDays.length === 0) {
+      return res.status(400).json({ error: `Invalid days specified. Valid days are: ${ALL_POSSIBLE_DAYS.join(', ')}` });
+    }
+
+    const joinedDays = validDays.join(',');
+
+    const [settings] = await db.select().from(schoolSettings).limit(1);
+    if (settings) {
+      await db
+        .update(schoolSettings)
+        .set({ timetableDays: joinedDays, updatedAt: new Date() })
+        .where(eq(schoolSettings.id, settings.id));
+    } else {
+      await db.insert(schoolSettings).values({ timetableDays: joinedDays });
+    }
+
+    await logAuditEvent({
+      userId: req.user!.id,
+      userEmail: req.user!.email,
+      role: req.user!.role,
+      action: 'UPDATE_TIMETABLE_DAYS',
+      resource: 'school_settings',
+      resourceId: 'timetable_days',
+      details: { days: validDays },
+      ipAddress: req.ip,
+    });
+
+    return res.json({
+      message: 'School timetable days updated successfully.',
+      days: validDays,
+    });
+  } catch (error: any) {
+    console.error('Error updating timetable schedule days:', error);
+    return res.status(500).json({ error: 'Failed to update timetable schedule days.' });
   }
 });
 
@@ -389,60 +711,75 @@ timetableRouter.post('/', requireAuth, requireRoleOrPermission(['super_admin'], 
       });
     }
 
-    // 2. VALIDATE DAY, TIME, PERIOD VALUES
-    if (!DAYS_OF_WEEK.includes(dayOfWeek as any)) {
+    // 2. VALIDATE DAY, TIME, PERIOD VALUES AGAINST CONFIGURED SCHOOL SCHEDULE
+    const schedule = await getActiveSchoolSchedule();
+    if (!schedule.days.includes(dayOfWeek)) {
       return res.status(400).json({
-        error: `Invalid day of week '${dayOfWeek}'. Allowed days: ${DAYS_OF_WEEK.join(', ')}.`,
+        error: `Invalid day of week '${dayOfWeek}'. Active school days are: ${schedule.days.join(', ')}.`,
       });
     }
 
-    if (parsedPeriodNumber < 1 || parsedPeriodNumber > 10) {
-      return res.status(400).json({ error: 'Period number must be between 1 and 10.' });
-    }
+    const cleanStart = String(startTime).trim();
+    const cleanEnd = String(endTime).trim();
 
-    if (!isValidTimeFormat(startTime) || !isValidTimeFormat(endTime)) {
+    if (!isValidTimeFormat(cleanStart) || !isValidTimeFormat(cleanEnd)) {
       return res.status(400).json({ error: 'Start time and End time must be in valid HH:MM 24-hour format.' });
     }
 
-    if (startTime >= endTime) {
+    if (cleanStart >= cleanEnd) {
       return res.status(400).json({ error: 'Start time must be strictly before end time.' });
     }
 
-    // 3. PREVENT DUPLICATE CLASS/DAY/PERIOD SLOTS
-    const [existingClassSlot] = await db
-      .select({ id: timetables.id })
+    // Verify period exists and is a valid teaching interval
+    const configuredPeriod = schedule.periods.find((p: any) => p.periodNumber === parsedPeriodNumber);
+    if (configuredPeriod && configuredPeriod.isTeaching === false) {
+      return res.status(400).json({
+        error: `Cannot schedule a lesson during non-teaching interval "${configuredPeriod.label}" (${configuredPeriod.type}).`,
+      });
+    }
+
+    // 3. PREVENT CLASS DOUBLE-BOOKING (same period or overlapping time)
+    const existingClassSlots = await db
+      .select({ id: timetables.id, periodNumber: timetables.periodNumber, startTime: timetables.startTime, endTime: timetables.endTime })
       .from(timetables)
       .where(
         and(
           eq(timetables.classId, parsedClassId),
-          eq(timetables.dayOfWeek, dayOfWeek),
-          eq(timetables.periodNumber, parsedPeriodNumber)
+          eq(timetables.dayOfWeek, dayOfWeek)
         )
-      )
-      .limit(1);
+      );
 
-    if (existingClassSlot) {
+    const classConflict = existingClassSlots.find((s) =>
+      s.periodNumber === parsedPeriodNumber ||
+      (cleanStart < s.endTime && cleanEnd > s.startTime)
+    );
+
+    if (classConflict) {
       return res.status(400).json({
-        error: `Class slot collision: Class ${targetClass.name} already has a scheduled subject on ${dayOfWeek} period ${parsedPeriodNumber}.`,
+        error: `Class booking conflict: Class ${targetClass.name} already has a scheduled lesson on ${dayOfWeek} period ${classConflict.periodNumber} (${classConflict.startTime} - ${classConflict.endTime}).`,
       });
     }
 
-    // 4. PREVENT TEACHER TIME COLLISION
-    const [existingTeacherSlot] = await db
-      .select({ id: timetables.id, classId: timetables.classId })
+    // 4. PREVENT TEACHER DOUBLE-BOOKING (same period or overlapping time across any class)
+    const existingTeacherSlots = await db
+      .select({ id: timetables.id, classId: timetables.classId, periodNumber: timetables.periodNumber, startTime: timetables.startTime, endTime: timetables.endTime })
       .from(timetables)
       .where(
         and(
           eq(timetables.teacherId, parsedTeacherId),
-          eq(timetables.dayOfWeek, dayOfWeek),
-          eq(timetables.periodNumber, parsedPeriodNumber)
+          eq(timetables.dayOfWeek, dayOfWeek)
         )
-      )
-      .limit(1);
+      );
 
-    if (existingTeacherSlot) {
+    const teacherConflict = existingTeacherSlots.find((s) =>
+      s.periodNumber === parsedPeriodNumber ||
+      (cleanStart < s.endTime && cleanEnd > s.startTime)
+    );
+
+    if (teacherConflict) {
+      const [conflictingClass] = await db.select({ name: classes.name }).from(classes).where(eq(classes.id, teacherConflict.classId)).limit(1);
       return res.status(400).json({
-        error: `Teacher booking conflict: This teacher is already scheduled for class #${existingTeacherSlot.classId} on ${dayOfWeek} period ${parsedPeriodNumber}.`,
+        error: `Teacher booking conflict: This teacher is already scheduled for class ${conflictingClass?.name || `#${teacherConflict.classId}`} on ${dayOfWeek} period ${teacherConflict.periodNumber} (${teacherConflict.startTime} - ${teacherConflict.endTime}).`,
       });
     }
 
@@ -561,12 +898,9 @@ timetableRouter.put('/:id', requireAuth, requireRoleOrPermission(['super_admin']
       });
     }
 
-    if (!DAYS_OF_WEEK.includes(newDay as any)) {
-      return res.status(400).json({ error: `Invalid day of week '${newDay}'.` });
-    }
-
-    if (newPeriod < 1 || newPeriod > 10) {
-      return res.status(400).json({ error: 'Period number must be between 1 and 10.' });
+    const schedule = await getActiveSchoolSchedule();
+    if (!schedule.days.includes(newDay)) {
+      return res.status(400).json({ error: `Invalid day of week '${newDay}'. Active school days are: ${schedule.days.join(', ')}.` });
     }
 
     if (!isValidTimeFormat(newStart) || !isValidTimeFormat(newEnd)) {
@@ -577,43 +911,58 @@ timetableRouter.put('/:id', requireAuth, requireRoleOrPermission(['super_admin']
       return res.status(400).json({ error: 'Start time must be strictly before end time.' });
     }
 
-    // Check duplicate class slot collision
-    const [classCollision] = await db
-      .select({ id: timetables.id })
+    // Verify period exists and is a valid teaching interval
+    const configuredPeriod = schedule.periods.find((p: any) => p.periodNumber === newPeriod);
+    if (configuredPeriod && configuredPeriod.isTeaching === false) {
+      return res.status(400).json({
+        error: `Cannot schedule a lesson during non-teaching interval "${configuredPeriod.label}" (${configuredPeriod.type}).`,
+      });
+    }
+
+    // Check duplicate class slot collision or overlapping time
+    const existingClassSlots = await db
+      .select({ id: timetables.id, periodNumber: timetables.periodNumber, startTime: timetables.startTime, endTime: timetables.endTime })
       .from(timetables)
       .where(
         and(
           eq(timetables.classId, newClassId),
           eq(timetables.dayOfWeek, newDay),
-          eq(timetables.periodNumber, newPeriod),
           ne(timetables.id, slotId)
         )
-      )
-      .limit(1);
+      );
+
+    const classCollision = existingClassSlots.find((s) =>
+      s.periodNumber === newPeriod ||
+      (newStart < s.endTime && newEnd > s.startTime)
+    );
 
     if (classCollision) {
       return res.status(400).json({
-        error: `Class slot collision: Class already has a scheduled subject on ${newDay} period ${newPeriod}.`,
+        error: `Class booking conflict: Class already has a scheduled lesson on ${newDay} period ${classCollision.periodNumber} (${classCollision.startTime} - ${classCollision.endTime}).`,
       });
     }
 
-    // Check duplicate teacher booking collision
-    const [teacherCollision] = await db
-      .select({ id: timetables.id, classId: timetables.classId })
+    // Check duplicate teacher booking collision or overlapping time
+    const existingTeacherSlots = await db
+      .select({ id: timetables.id, classId: timetables.classId, periodNumber: timetables.periodNumber, startTime: timetables.startTime, endTime: timetables.endTime })
       .from(timetables)
       .where(
         and(
           eq(timetables.teacherId, newTeacherId),
           eq(timetables.dayOfWeek, newDay),
-          eq(timetables.periodNumber, newPeriod),
           ne(timetables.id, slotId)
         )
-      )
-      .limit(1);
+      );
+
+    const teacherCollision = existingTeacherSlots.find((s) =>
+      s.periodNumber === newPeriod ||
+      (newStart < s.endTime && newEnd > s.startTime)
+    );
 
     if (teacherCollision) {
+      const [conflictingClass] = await db.select({ name: classes.name }).from(classes).where(eq(classes.id, teacherCollision.classId)).limit(1);
       return res.status(400).json({
-        error: `Teacher booking conflict: This teacher is already scheduled for class #${teacherCollision.classId} on ${newDay} period ${newPeriod}.`,
+        error: `Teacher booking conflict: This teacher is already scheduled for class ${conflictingClass?.name || `#${teacherCollision.classId}`} on ${newDay} period ${teacherCollision.periodNumber} (${teacherCollision.startTime} - ${teacherCollision.endTime}).`,
       });
     }
 

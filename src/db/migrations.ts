@@ -1025,6 +1025,50 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN null; END $$;
 `,
   },
+  {
+    version: 19,
+    name: '0019_configurable_timetable_schedules',
+    sql: `
+DO $$ BEGIN
+  ALTER TABLE school_settings ADD COLUMN IF NOT EXISTS timetable_days TEXT NOT NULL DEFAULT 'Monday,Tuesday,Wednesday,Thursday,Friday';
+EXCEPTION WHEN OTHERS THEN null; END $$;
+
+CREATE TABLE IF NOT EXISTS timetable_periods (
+  id SERIAL PRIMARY KEY,
+  period_number INTEGER NOT NULL,
+  label TEXT NOT NULL,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'lesson',
+  is_teaching BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  days TEXT NOT NULL DEFAULT 'Monday,Tuesday,Wednesday,Thursday,Friday',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS timetable_periods_number_idx ON timetable_periods (period_number);
+CREATE INDEX IF NOT EXISTS timetable_periods_type_idx ON timetable_periods (type);
+
+-- Seed default standard periods if table is empty
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM timetable_periods LIMIT 1) THEN
+    INSERT INTO timetable_periods (period_number, label, start_time, end_time, type, is_teaching, sort_order, days)
+    VALUES
+      (1, 'Period 1', '08:00', '08:45', 'lesson', true, 1, 'Monday,Tuesday,Wednesday,Thursday,Friday'),
+      (2, 'Period 2', '08:45', '09:30', 'lesson', true, 2, 'Monday,Tuesday,Wednesday,Thursday,Friday'),
+      (3, 'Period 3', '09:30', '10:15', 'lesson', true, 3, 'Monday,Tuesday,Wednesday,Thursday,Friday'),
+      (0, 'Morning Break', '10:15', '10:45', 'break', false, 4, 'Monday,Tuesday,Wednesday,Thursday,Friday'),
+      (4, 'Period 4', '10:45', '11:30', 'lesson', true, 5, 'Monday,Tuesday,Wednesday,Thursday,Friday'),
+      (5, 'Period 5', '11:30', '12:15', 'lesson', true, 6, 'Monday,Tuesday,Wednesday,Thursday,Friday'),
+      (6, 'Period 6', '12:15', '13:00', 'lesson', true, 7, 'Monday,Tuesday,Wednesday,Thursday,Friday'),
+      (99, 'Lunch Interval', '13:00', '13:45', 'lunch', false, 8, 'Monday,Tuesday,Wednesday,Thursday,Friday'),
+      (7, 'Period 7', '13:45', '14:30', 'lesson', true, 9, 'Monday,Tuesday,Wednesday,Thursday,Friday'),
+      (8, 'Period 8', '14:30', '15:15', 'lesson', true, 10, 'Monday,Tuesday,Wednesday,Thursday,Friday');
+  END IF;
+END $$;
+`,
+  },
 ];
 
 async function executeSql(sql: string): Promise<void> {

@@ -24,6 +24,7 @@ import {
   schoolSettings,
   auditLogs,
   timetables,
+  timetablePeriods,
   departments,
   admissionApplications,
   admissionApplicationLogs,
@@ -441,6 +442,21 @@ CREATE TABLE IF NOT EXISTS school_settings (
   attendance_start_time TEXT NOT NULL DEFAULT '07:30',
   attendance_cutoff_time TEXT NOT NULL DEFAULT '08:30',
   attendance_policy TEXT NOT NULL DEFAULT 'flexible',
+  timetable_days TEXT NOT NULL DEFAULT 'Monday,Tuesday,Wednesday,Thursday,Friday',
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS timetable_periods (
+  id SERIAL PRIMARY KEY,
+  period_number INTEGER NOT NULL,
+  label TEXT NOT NULL,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'lesson',
+  is_teaching BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  days TEXT NOT NULL DEFAULT 'Monday,Tuesday,Wednesday,Thursday,Friday',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -1358,6 +1374,22 @@ export async function seedInitialData(explicitOptIn = false) {
 
     // 14. Class Timetables Seeding
     console.log('🌱 Seeding official class timetables for all active classes...');
+    const existingPeriods = await db.select().from(timetablePeriods);
+    if (existingPeriods.length === 0) {
+      await db.insert(timetablePeriods).values([
+        { periodNumber: 1, label: 'Period 1', startTime: '08:00', endTime: '08:45', type: 'lesson', isTeaching: true, sortOrder: 1, days: 'Monday,Tuesday,Wednesday,Thursday,Friday' },
+        { periodNumber: 2, label: 'Period 2', startTime: '08:45', endTime: '09:30', type: 'lesson', isTeaching: true, sortOrder: 2, days: 'Monday,Tuesday,Wednesday,Thursday,Friday' },
+        { periodNumber: 3, label: 'Period 3', startTime: '09:30', endTime: '10:15', type: 'lesson', isTeaching: true, sortOrder: 3, days: 'Monday,Tuesday,Wednesday,Thursday,Friday' },
+        { periodNumber: 0, label: 'Morning Break', startTime: '10:15', endTime: '10:45', type: 'break', isTeaching: false, sortOrder: 4, days: 'Monday,Tuesday,Wednesday,Thursday,Friday' },
+        { periodNumber: 4, label: 'Period 4', startTime: '10:45', endTime: '11:30', type: 'lesson', isTeaching: true, sortOrder: 5, days: 'Monday,Tuesday,Wednesday,Thursday,Friday' },
+        { periodNumber: 5, label: 'Period 5', startTime: '11:30', endTime: '12:15', type: 'lesson', isTeaching: true, sortOrder: 6, days: 'Monday,Tuesday,Wednesday,Thursday,Friday' },
+        { periodNumber: 6, label: 'Period 6', startTime: '12:15', endTime: '13:00', type: 'lesson', isTeaching: true, sortOrder: 7, days: 'Monday,Tuesday,Wednesday,Thursday,Friday' },
+        { periodNumber: 99, label: 'Lunch Interval', startTime: '13:00', endTime: '13:45', type: 'lunch', isTeaching: false, sortOrder: 8, days: 'Monday,Tuesday,Wednesday,Thursday,Friday' },
+        { periodNumber: 7, label: 'Period 7', startTime: '13:45', endTime: '14:30', type: 'lesson', isTeaching: true, sortOrder: 9, days: 'Monday,Tuesday,Wednesday,Thursday,Friday' },
+        { periodNumber: 8, label: 'Period 8', startTime: '14:30', endTime: '15:15', type: 'lesson', isTeaching: true, sortOrder: 10, days: 'Monday,Tuesday,Wednesday,Thursday,Friday' },
+      ]);
+    }
+
     const DAYS_LIST = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const PERIODS_LIST = [
       { num: 1, start: '08:00', end: '08:45' },
