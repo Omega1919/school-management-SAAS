@@ -1069,6 +1069,26 @@ DO $$ BEGIN
 END $$;
 `,
   },
+  {
+    version: 20,
+    name: 'admin_verification_sessions_and_password_hardening',
+    sql: `
+CREATE TABLE IF NOT EXISTS admin_verification_sessions (
+  id SERIAL PRIMARY KEY,
+  verify_token TEXT UNIQUE NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  attempts_remaining INTEGER NOT NULL DEFAULT 5,
+  resend_count INTEGER NOT NULL DEFAULT 0,
+  last_resend_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS admin_verif_token_idx ON admin_verification_sessions (verify_token);
+CREATE INDEX IF NOT EXISTS admin_verif_user_idx ON admin_verification_sessions (user_id);
+`,
+  },
 ];
 
 async function executeSql(sql: string): Promise<void> {

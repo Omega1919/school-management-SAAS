@@ -79,6 +79,23 @@ export async function comparePassword(password: string, hash: string): Promise<b
   return bcrypt.compare(password, hash);
 }
 
+/**
+ * Validates password length and complexity bounds.
+ * Minimum 8 characters. Maximum 72 bytes (preventing silent bcrypt truncation).
+ */
+export function validatePasswordStrength(password: string): { valid: boolean; error?: string } {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, error: 'Password is required' };
+  }
+  if (password.length < 8) {
+    return { valid: false, error: 'Password must be at least 8 characters long' };
+  }
+  if (Buffer.byteLength(password, 'utf8') > 72) {
+    return { valid: false, error: 'Password cannot exceed 72 bytes (maximum bcrypt input limit)' };
+  }
+  return { valid: true };
+}
+
 export function generateToken(payload: TokenPayload, expiresIn = '7d'): string {
   return jwt.sign(payload, getJwtSecret(), { expiresIn } as jwt.SignOptions);
 }

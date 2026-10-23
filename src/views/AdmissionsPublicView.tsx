@@ -51,17 +51,18 @@ import { DatePicker } from '../components/DatePicker.tsx';
 import { sanitizeHtml } from '../lib/sanitize.ts';
 import { ScrollReveal } from '../components/ScrollReveal.tsx';
 
-// Direct ES module image imports for 100% reliable Vite bundling & rendering
-import heroBg1 from '../assets/images/library_scholar_top_banner_1790844349643.jpg';
-import heroBg2 from '../assets/images/library_study_circle_1790843982330.jpg';
-import heroBg3 from '../assets/images/campus_quad_walkway_1790843995898.jpg';
-import heroBg4 from '../assets/images/science_lab_scholar_1790844011577.jpg';
-import heroBg5 from '../assets/images/modern_auditorium_hall_1790844023473.jpg';
-import heroBg6 from '../assets/images/library_scholar_female_1790793440390.jpg';
+// Direct ES module image imports optimized with WebP for sub-second hero rendering
+import heroBg1 from '../assets/images/library_scholar_top_banner_1790844349643.webp';
+import heroBg2 from '../assets/images/library_study_circle_1790843982330.webp';
+import heroBg3 from '../assets/images/campus_quad_walkway_1790843995898.webp';
+import heroBg4 from '../assets/images/science_lab_scholar_1790844011577.webp';
+import heroBg5 from '../assets/images/modern_auditorium_hall_1790844023473.webp';
+import heroBg6 from '../assets/images/library_scholar_female_1790793440390.webp';
 
-import progCard1 from '../assets/images/campus_library_student_1790788853708.jpg';
-import progCard2 from '../assets/images/study_commons_lounge_1790788903218.jpg';
-import progCard3 from '../assets/images/modern_lecture_hall_1790788892283.jpg';
+// Instant lightweight blur placeholder (base64 WebP, <300 bytes) rendered on millisecond 0
+// Prevents any empty/dark flash or perceptible delay while the optimized hero WebP loads
+const HERO_BLUR_LQIP =
+  'data:image/webp;base64,UklGRsAAAABXRUJQVlA4ILQAAADQBACdASoYAA0APu1iqU2ppaOiMAgBMB2JYgCxDE3J/sUBZ+Dfql5dwumv3ZwISAD+yWHYP+X0yHS2oOgKL8tkGNrXpZvIGF88Yz0uKNT/4SW4wNf/2dF1vnpsfsv6LRb9IrSQIAmMW0GDdUciAPzHrWUz8wsUcwdtW/FNeXlO+aNgEnNvuGgm+dW43Wtdi6X9eVswxrlssuTOvbBZkr2ORKPsphm6ErEvrH6GLTOO2uVzCAA=';
 
 interface PublicPortalContentResponse {
   settings: {
@@ -268,6 +269,33 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
 
   // 10-Second Auto-Rotating Campus Background Carousel
   const [currentBgIndex, setCurrentBgIndex] = useState(0);
+  // Immediate loaded state for hero background to prevent blank display
+  const [isHeroLoaded, setIsHeroLoaded] = useState(false);
+  // Staggered slide rendering so we don't fetch all 6 slides simultaneously
+  const [loadedSlideIndexes, setLoadedSlideIndexes] = useState<number[]>([0]);
+
+  // Pre-decode primary hero image immediately with high priority
+  useEffect(() => {
+    const primaryImg = new Image();
+    primaryImg.src = heroBg1;
+    if (primaryImg.complete) {
+      setIsHeroLoaded(true);
+    } else {
+      primaryImg.onload = () => setIsHeroLoaded(true);
+    }
+  }, []);
+
+  // Preload upcoming slide ahead of rotation without competing with initial render
+  useEffect(() => {
+    const nextIdx = (currentBgIndex + 1) % BACKGROUND_IMAGES.length;
+    if (!loadedSlideIndexes.includes(nextIdx)) {
+      const img = new Image();
+      img.src = BACKGROUND_IMAGES[nextIdx].src;
+      img.onload = () => {
+        setLoadedSlideIndexes((prev) => (prev.includes(nextIdx) ? prev : [...prev, nextIdx]));
+      };
+    }
+  }, [currentBgIndex, loadedSlideIndexes]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -1172,8 +1200,26 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
             transformOrigin: 'center center',
           }}
         >
+          {/* Instant Blur LQIP Placeholder (renders immediately on millisecond 0, zero network wait) */}
+          <div
+            className={`absolute inset-0 bg-cover bg-center transition-opacity duration-700 ease-out transform scale-110 filter blur-xl ${
+              isHeroLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'
+            }`}
+            style={{
+              backgroundImage: `url("${HERO_BLUR_LQIP}")`,
+              backgroundPosition: 'center center',
+              backgroundSize: 'cover',
+            }}
+            aria-hidden="true"
+          />
+
+          {/* Active & Preloaded Carousel Slides */}
           {BACKGROUND_IMAGES.map((img, idx) => {
             const isActive = idx === currentBgIndex;
+            const isPreloaded = loadedSlideIndexes.includes(idx);
+            // Stagger rendering: only mount the active slide or slides already pre-cached in memory
+            if (!isActive && !isPreloaded) return null;
+
             return (
               <div
                 key={img.src}
@@ -1185,6 +1231,12 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
                   src={img.src}
                   alt={img.title}
                   referrerPolicy="no-referrer"
+                  fetchPriority={idx === 0 ? 'high' : 'auto'}
+                  loading={idx === 0 ? 'eager' : 'lazy'}
+                  decoding="async"
+                  onLoad={() => {
+                    if (idx === 0) setIsHeroLoaded(true);
+                  }}
                   className={`w-full h-full object-cover transform transition-transform duration-10000 ease-out ${
                     isActive ? 'scale-105' : 'scale-100'
                   }`}

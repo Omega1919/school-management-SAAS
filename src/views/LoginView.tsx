@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../context/AuthContext.tsx';
 import { useSettings } from '../context/SettingsContext.tsx';
 import { UserRole } from '../types.ts';
+import { apiRequest } from '../lib/api.ts';
 import { StudentPortalIllustration } from '../components/StudentPortalIllustration.tsx';
 import { ParentPortalIllustration } from '../components/ParentPortalIllustration.tsx';
 import { TeacherPortalIllustration } from '../components/TeacherPortalIllustration.tsx';
@@ -134,7 +135,7 @@ const PORTAL_CONFIGS: Record<UserRole, PortalConfig> = {
     signupPrompt: 'Executive management and administrative control access',
     allowSignUp: false, // Admin accounts cannot casually self-register
     allowGoogle: true,
-    accessNote: 'Super Admin credentials with 2FA email confirmation',
+    accessNote: 'Super Admin credentials (direct demo login, 2FA bypassed)',
     accentHex: '#9333EA',
     buttonClass: 'bg-[#9333EA] hover:bg-[#7E22CE] shadow-purple-900/40',
     focusBorderClass: 'focus:border-[#9333EA]',
@@ -190,6 +191,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
   } | null>(null);
   const [verificationCode, setVerificationCode] = useState('');
   const [resendSuccessMessage, setResendSuccessMessage] = useState<string | null>(null);
+  const [demoMailNotice, setDemoMailNotice] = useState<string | null>(null);
 
   // Sign up form state
   const [signupStudentId, setSignupStudentId] = useState('');
@@ -286,7 +288,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
           devCode: res.devCode,
           message: res.message,
         });
-        setVerificationCode(res.devCode || '');
+        setVerificationCode('');
+        setDemoMailNotice(null);
         setError(null);
       }
     } catch (err: any) {
@@ -317,18 +320,30 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
     if (!verifySession) return;
     setLoading(true);
     setError(null);
+    setDemoMailNotice(null);
     try {
       const res = await resendAdminCode(verifySession.verifyToken);
-      if (res.devCode) {
-        setVerifySession((prev) => (prev ? { ...prev, devCode: res.devCode } : null));
-        setVerificationCode(res.devCode);
-      }
-      setResendSuccessMessage(res.message || 'New verification code sent!');
+      setResendSuccessMessage(res.message || 'New verification code dispatched!');
       setTimeout(() => setResendSuccessMessage(null), 4000);
     } catch (err: any) {
       setError(err.message || 'Failed to resend verification code.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCheckDemoMailbox = async () => {
+    if (!verifySession) return;
+    try {
+      const res = await apiRequest<{ simulated: boolean; verificationCode: string }>(
+        `/auth/demo-simulated-mail?verifyToken=${encodeURIComponent(verifySession.verifyToken)}`
+      );
+      if (res && res.verificationCode) {
+        setDemoMailNotice(res.verificationCode);
+        setVerificationCode(res.verificationCode);
+      }
+    } catch {
+      // Disabled in production or no active simulated message
     }
   };
 
@@ -973,21 +988,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
               <span>{verifySession.email}</span>
             </div>
 
-            {/* In-app preview banner / Simulated Mail Delivery */}
-            {verifySession.devCode && (
+            {/* Optional Safe Demo Mailbox Inspection (Demo / Non-Production Only) */}
+            {demoMailNotice && (
               <div className="mt-4 p-3.5 rounded-2xl bg-purple-900/30 border border-purple-500/30 text-purple-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div>
                   <div className="font-semibold text-purple-300 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    Simulated Email Dispatch
+                    Simulated Email Dispatch (Demo Only)
                   </div>
                   <p className="text-[11px] text-purple-200/80 mt-0.5">
-                    Verification Code: <span className="font-mono font-bold text-white text-sm tracking-widest">{verifySession.devCode}</span>
+                    Verification Code: <span className="font-mono font-bold text-white text-sm tracking-widest">{demoMailNotice}</span>
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setVerificationCode(verifySession.devCode || '')}
+                  onClick={() => setVerificationCode(demoMailNotice)}
                   className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold text-[11px] transition-all cursor-pointer shadow-xs self-start sm:self-center shrink-0"
                 >
                   Autofill Code
@@ -1069,6 +1084,16 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                     className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
                   >
                     Back to Login
+                  </button>
+                </div>
+
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={handleCheckDemoMailbox}
+                    className="text-[11px] text-purple-400/80 hover:text-purple-300 transition-colors cursor-pointer"
+                  >
+                    Check Simulated Demo Inbox
                   </button>
                 </div>
               </div>

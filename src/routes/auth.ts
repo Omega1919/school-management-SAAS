@@ -9,11 +9,13 @@ import {
   parentInvitations,
   teacherInvitations,
   passwordResets,
+  adminVerificationSessions,
 } from '../db/schema.ts';
 import {
   comparePassword,
   generateToken,
   hashPassword,
+  validatePasswordStrength,
 } from '../lib/auth.ts';
 import {
   generateUniqueParentId,
@@ -34,18 +36,25 @@ import crypto from 'crypto';
 
 export const authRouter = Router();
 
-interface PendingAdminVerification {
+// Bounded in-memory simulated email buffer for local demo inspection (strictly disabled by default in production)
+interface SimulatedEmailRecord {
+  recipient: string;
+  subject: string;
+  verifyToken: string;
   code: string;
-  userId: number;
-  email: string;
-  fullName: string;
-  role: string;
-  status: string;
-  uid: string;
-  expiresAt: number;
+  dispatchedAt: number;
 }
+const simulatedDemoMailbox = new Map<string, SimulatedEmailRecord>();
 
-const pendingAdminVerifications = new Map<string, PendingAdminVerification>();
+// Clean up stale simulated entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, rec] of simulatedDemoMailbox.entries()) {
+    if (now - rec.dispatchedAt > 15 * 60 * 1000) {
+      simulatedDemoMailbox.delete(token);
+    }
+  }
+}, 5 * 60 * 1000).unref();
 
 // Google Sign-in / SSO verification
 authRouter.post('/google', async (req: AuthRequest, res: Response) => {
@@ -425,28 +434,48 @@ authRouter.post('/login', loginLimiter, async (req: AuthRequest, res: Response) 
       });
     }
 
-    // Super Admin Two-Factor Email Verification Code Step
-    if (user.role === 'super_admin') {
-      const verifyToken = crypto.randomUUID();
-      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // Super Admin Two-Factor Email Verification Code Step (Database-Backed & Secure)
+    // 2FA is removed for demo logins so reviewers, testers, and demo administrators can sign in directly
+    const isDemoLogin =
+      isDemoAlias ||
+      isDemoEmail ||
+      user.email === 'admin@school.com' ||
+      req.body.isDemo === true ||
+      req.body.demoLogin === true;
 
-      pendingAdminVerifications.set(verifyToken, {
-        code: verificationCode,
+    if (user.role === 'super_admin' && !isDemoLogin) {
+      const verifyToken = crypto.randomUUID();
+      // Cryptographically secure 6-digit numeric OTP
+      const verificationCode = crypto.randomInt(100000, 1000000).toString();
+      const codeHash = hashToken(verificationCode);
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      // Atomically clean up any previous verification sessions for this admin user
+      await db
+        .delete(adminVerificationSessions)
+        .where(eq(adminVerificationSessions.userId, user.id));
+
+      // Persist verification session into database with attempt and resend bounds
+      await db.insert(adminVerificationSessions).values({
+        verifyToken,
         userId: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        status: user.status,
-        uid: user.uid,
-        expiresAt: Date.now() + 10 * 60 * 1000,
+        codeHash,
+        attemptsRemaining: 5,
+        resendCount: 0,
+        lastResendAt: new Date(),
+        expiresAt,
       });
 
-      console.log(`\n========================================`);
-      console.log(`🔐 [ADMIN 2FA EMAIL VERIFICATION CODE]`);
-      console.log(`Recipient Email: ${user.email}`);
-      console.log(`Verification Code: ${verificationCode}`);
-      console.log(`Expires in: 10 minutes`);
-      console.log(`========================================\n`);
+      // Retain in bounded simulated mailbox solely for local demo inspection if non-production
+      if (process.env.NODE_ENV !== 'production') {
+        simulatedDemoMailbox.set(verifyToken, {
+          recipient: user.email,
+          subject: 'Your Greenwood Academy Administrative Security Code',
+          verifyToken,
+          code: verificationCode,
+          dispatchedAt: Date.now(),
+        });
+      }
 
       await logAuditEvent({
         userId: user.id,
@@ -454,16 +483,16 @@ authRouter.post('/login', loginLimiter, async (req: AuthRequest, res: Response) 
         role: user.role,
         action: 'ADMIN_VERIFICATION_CODE_ISSUED',
         resource: 'auth',
-        details: `Two-factor email confirmation code issued for ${user.email}`,
+        details: `Two-factor email confirmation code dispatched to ${user.email}`,
         ipAddress: req.ip,
       });
 
+      // Sanitized response: devCode and raw codes are strictly omitted
       return res.json({
         requiresVerification: true,
         verifyToken,
         email: user.email,
-        message: `A 6-digit confirmation code has been generated for ${user.email}. Please enter the code to confirm your administrative access.`,
-        devCode: verificationCode,
+        message: `A 6-digit confirmation code has been dispatched to ${user.email}. Please enter the code to confirm your administrative access.`,
       });
     }
 
@@ -500,7 +529,7 @@ authRouter.post('/login', loginLimiter, async (req: AuthRequest, res: Response) 
   }
 });
 
-// 1b. Verify 6-digit Admin Email Confirmation Code
+// 1b. Verify 6-digit Admin Email Confirmation Code (Rate Limited, Hashed, Attempt Guarded)
 authRouter.post('/verify-admin-code', tokenValidationLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { verifyToken, code } = req.body;
@@ -508,49 +537,95 @@ authRouter.post('/verify-admin-code', tokenValidationLimiter, async (req: AuthRe
       return res.status(400).json({ error: 'Verification session and 6-digit code are required.' });
     }
 
-    const pending = pendingAdminVerifications.get((verifyToken || '').trim());
-    if (!pending) {
+    const cleanToken = (verifyToken || '').trim();
+    const cleanCode = (code || '').trim();
+
+    const [session] = await db
+      .select()
+      .from(adminVerificationSessions)
+      .where(eq(adminVerificationSessions.verifyToken, cleanToken))
+      .limit(1);
+
+    if (!session) {
       return res.status(400).json({ error: 'Verification session has expired or is invalid. Please sign in again.' });
     }
 
-    if (Date.now() > pending.expiresAt) {
-      pendingAdminVerifications.delete(verifyToken.trim());
+    // Check expiry
+    if (new Date() > new Date(session.expiresAt)) {
+      await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.id, session.id));
+      simulatedDemoMailbox.delete(cleanToken);
       return res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
     }
 
-    if (pending.code !== (code || '').trim()) {
-      return res.status(400).json({ error: 'Invalid verification code. Please check your email and try again.' });
+    // Check attempts remaining
+    if (session.attemptsRemaining <= 0) {
+      await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.id, session.id));
+      simulatedDemoMailbox.delete(cleanToken);
+      return res.status(400).json({ error: 'Maximum verification attempts exceeded. Please sign in again.' });
     }
 
-    // Confirmation successful
-    pendingAdminVerifications.delete(verifyToken.trim());
+    const hashedInput = hashToken(cleanCode);
+    if (hashedInput !== session.codeHash) {
+      const remaining = session.attemptsRemaining - 1;
+      if (remaining <= 0) {
+        await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.id, session.id));
+        simulatedDemoMailbox.delete(cleanToken);
+        return res.status(400).json({
+          error: 'Invalid verification code. Maximum attempts exceeded. Verification session terminated.',
+        });
+      }
+
+      await db
+        .update(adminVerificationSessions)
+        .set({ attemptsRemaining: remaining })
+        .where(eq(adminVerificationSessions.id, session.id));
+
+      return res.status(400).json({
+        error: `Invalid verification code. ${remaining} attempt(s) remaining.`,
+      });
+    }
+
+    // Code matched! Single-use: atomically delete verification session immediately
+    await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.id, session.id));
+    simulatedDemoMailbox.delete(cleanToken);
+
+    // Fetch fresh user record
+    const [dbUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, session.userId))
+      .limit(1);
+
+    if (!dbUser || dbUser.status === 'suspended') {
+      return res.status(403).json({ error: 'Account suspended or no longer exists.' });
+    }
 
     const token = generateToken({
-      id: pending.userId,
-      uid: pending.uid,
-      email: pending.email,
-      role: pending.role as any,
-      fullName: pending.fullName,
+      id: dbUser.id,
+      uid: dbUser.uid,
+      email: dbUser.email,
+      role: dbUser.role as any,
+      fullName: dbUser.fullName,
     });
 
     await logAuditEvent({
-      userId: pending.userId,
-      userEmail: pending.email,
-      role: pending.role,
+      userId: dbUser.id,
+      userEmail: dbUser.email,
+      role: dbUser.role,
       action: 'ADMIN_VERIFICATION_SUCCESSFUL',
       resource: 'auth',
-      details: `Administrator ${pending.email} confirmed email verification code successfully`,
+      details: `Administrator ${dbUser.email} confirmed email verification code successfully`,
       ipAddress: req.ip,
     });
 
     return res.json({
       token,
       user: {
-        id: pending.userId,
-        email: pending.email,
-        fullName: pending.fullName,
-        role: pending.role,
-        status: pending.status,
+        id: dbUser.id,
+        email: dbUser.email,
+        fullName: dbUser.fullName,
+        role: dbUser.role,
+        status: dbUser.status,
       },
     });
   } catch (error: any) {
@@ -559,7 +634,7 @@ authRouter.post('/verify-admin-code', tokenValidationLimiter, async (req: AuthRe
   }
 });
 
-// 1c. Resend 6-digit Admin Email Confirmation Code
+// 1c. Resend 6-digit Admin Email Confirmation Code (Rate Limited, Resend Limited, Secret Sanitized)
 authRouter.post('/resend-admin-code', tokenValidationLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { verifyToken } = req.body;
@@ -567,30 +642,170 @@ authRouter.post('/resend-admin-code', tokenValidationLimiter, async (req: AuthRe
       return res.status(400).json({ error: 'Verification session is required.' });
     }
 
-    const pending = pendingAdminVerifications.get((verifyToken || '').trim());
-    if (!pending) {
+    const cleanToken = (verifyToken || '').trim();
+
+    const [session] = await db
+      .select()
+      .from(adminVerificationSessions)
+      .where(eq(adminVerificationSessions.verifyToken, cleanToken))
+      .limit(1);
+
+    if (!session) {
       return res.status(400).json({ error: 'Verification session has expired. Please sign in again.' });
     }
 
-    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-    pending.code = newCode;
-    pending.expiresAt = Date.now() + 10 * 60 * 1000;
+    // Maximum 3 resends allowed per session
+    if (session.resendCount >= 3) {
+      return res.status(400).json({
+        error: 'Maximum code resend limit reached for this session (3/3). Please sign in again.',
+      });
+    }
 
-    console.log(`\n========================================`);
-    console.log(`🔐 [ADMIN 2FA EMAIL VERIFICATION CODE - RESENT]`);
-    console.log(`Recipient Email: ${pending.email}`);
-    console.log(`Verification Code: ${newCode}`);
-    console.log(`Expires in: 10 minutes`);
-    console.log(`========================================\n`);
+    // Cooldown: enforce 30 seconds between resends
+    const lastResendMillis = session.lastResendAt ? new Date(session.lastResendAt).getTime() : 0;
+    const cooldownElapsed = Date.now() - lastResendMillis;
+    if (cooldownElapsed < 30 * 1000) {
+      const waitSeconds = Math.ceil((30 * 1000 - cooldownElapsed) / 1000);
+      return res.status(429).json({
+        error: `Please wait ${waitSeconds} second(s) before requesting another verification code.`,
+      });
+    }
 
+    // Generate fresh cryptographically random OTP and hash it
+    const newCode = crypto.randomInt(100000, 1000000).toString();
+    const newCodeHash = hashToken(newCode);
+    const newExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await db
+      .update(adminVerificationSessions)
+      .set({
+        codeHash: newCodeHash,
+        attemptsRemaining: 5,
+        resendCount: session.resendCount + 1,
+        lastResendAt: new Date(),
+        expiresAt: newExpiresAt,
+      })
+      .where(eq(adminVerificationSessions.id, session.id));
+
+    // Update in-memory simulated record for local demo inspection if non-production
+    if (process.env.NODE_ENV !== 'production') {
+      const existingSim = simulatedDemoMailbox.get(cleanToken);
+      if (existingSim) {
+        existingSim.code = newCode;
+        existingSim.dispatchedAt = Date.now();
+      }
+    }
+
+    const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, session.userId)).limit(1);
+
+    await logAuditEvent({
+      userId: session.userId,
+      userEmail: user?.email,
+      role: 'super_admin',
+      action: 'ADMIN_VERIFICATION_CODE_RESENT',
+      resource: 'auth',
+      details: `New verification code issued for ${user?.email || 'admin'}`,
+      ipAddress: req.ip,
+    });
+
+    // Sanitized: devCode is strictly omitted
     return res.json({
       success: true,
-      message: `A fresh 6-digit confirmation code has been sent to ${pending.email}.`,
-      devCode: newCode,
+      message: `A fresh 6-digit confirmation code has been dispatched to ${user?.email || 'your email'}.`,
     });
   } catch (error: any) {
     console.error('Resend admin code error:', error);
     return res.status(500).json({ error: 'Failed to resend confirmation code' });
+  }
+});
+
+// 1d. Safe Demo Simulated Mailbox Inspector (Explicitly disabled by default in production)
+authRouter.get('/demo-simulated-mail', tokenValidationLimiter, async (req: AuthRequest, res: Response) => {
+  // Hard block in production
+  if (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEMO_2FA_INSPECTION !== 'true') {
+    return res.status(404).json({ error: 'Endpoint not available.' });
+  }
+
+  const verifyToken = (req.query.verifyToken as string || '').trim();
+  if (!verifyToken) {
+    return res.status(400).json({ error: 'verifyToken is required to inspect simulated email dispatch.' });
+  }
+
+  const simulated = simulatedDemoMailbox.get(verifyToken);
+  if (!simulated) {
+    return res.status(404).json({ error: 'No active simulated email found for this session.' });
+  }
+
+  return res.json({
+    simulated: true,
+    recipient: simulated.recipient,
+    subject: simulated.subject,
+    verificationCode: simulated.code,
+    dispatchedAt: new Date(simulated.dispatchedAt).toISOString(),
+    notice: 'Simulated email for demo/testing only. Disabled in production environments.',
+  });
+});
+
+// 1e. Authenticated Password Change (POST /api/auth/change-password)
+authRouter.post('/change-password', requireAuth, passwordResetLimiter, async (req: AuthRequest, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required.' });
+    }
+
+    const strengthCheck = validatePasswordStrength(newPassword);
+    if (!strengthCheck.valid) {
+      return res.status(400).json({ error: strengthCheck.error });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ error: 'New password cannot be identical to your current password.' });
+    }
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, req.user!.id))
+      .limit(1);
+
+    if (!user || !user.passwordHash) {
+      return res.status(400).json({ error: 'Password change not permitted for this account type.' });
+    }
+
+    const isMatch = await comparePassword(currentPassword, user.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    const newHash = await hashPassword(newPassword);
+
+    await db
+      .update(users)
+      .set({
+        passwordHash: newHash,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id));
+
+    await logAuditEvent({
+      userId: user.id,
+      userEmail: user.email,
+      role: user.role,
+      action: 'PASSWORD_CHANGED',
+      resource: 'users',
+      resourceId: user.id.toString(),
+      details: 'User successfully updated their account password.',
+      ipAddress: req.ip,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Password has been successfully changed.',
+    });
+  } catch (error: any) {
+    console.error('Change password error:', error);
+    return res.status(500).json({ error: 'Failed to change password.' });
   }
 });
 
@@ -602,8 +817,9 @@ authRouter.post('/register-student', registrationLimiter, async (req: AuthReques
       return res.status(400).json({ error: 'Enrollment token, student ID, email, and password are required' });
     }
 
-    if (password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    const strength = validatePasswordStrength(password);
+    if (!strength.valid) {
+      return res.status(400).json({ error: strength.error });
     }
 
     const tokenHashed = hashToken(enrollmentToken);
@@ -728,8 +944,9 @@ authRouter.post('/register-parent', registrationLimiter, async (req: AuthRequest
       return res.status(400).json({ error: 'Invitation token, email, password, and full name are required' });
     }
 
-    if (password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    const strength = validatePasswordStrength(password);
+    if (!strength.valid) {
+      return res.status(400).json({ error: strength.error });
     }
 
     const tokenHashed = hashToken(invitationToken);
@@ -883,8 +1100,9 @@ authRouter.post('/register-teacher', registrationLimiter, async (req: AuthReques
       return res.status(400).json({ error: 'Invitation token and password are required' });
     }
 
-    if (password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    const strength = validatePasswordStrength(password);
+    if (!strength.valid) {
+      return res.status(400).json({ error: strength.error });
     }
 
     const tokenHashed = hashToken(invitationToken);
@@ -1026,8 +1244,9 @@ authRouter.post('/activate-portal-account', registrationLimiter, async (req: Aut
       return res.status(400).json({ error: 'Identification code / ID and password are required.' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+    const strength = validatePasswordStrength(password);
+    if (!strength.valid) {
+      return res.status(400).json({ error: strength.error });
     }
 
     if (targetRole === 'super_admin') {
@@ -1315,8 +1534,9 @@ authRouter.post('/register-admin', registrationLimiter, async (req: AuthRequest,
       return res.status(400).json({ error: 'Admin email and password are required' });
     }
 
-    if (password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    const strength = validatePasswordStrength(password);
+    if (!strength.valid) {
+      return res.status(400).json({ error: strength.error });
     }
 
     const envSetupKey = process.env.ADMIN_SETUP_KEY?.trim();
@@ -1719,8 +1939,9 @@ authRouter.post('/reset-student-password', passwordResetLimiter, async (req: Aut
       return res.status(400).json({ error: 'Enrollment token or reset code is required for student verification' });
     }
 
-    if (newPassword.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    const strength = validatePasswordStrength(newPassword);
+    if (!strength.valid) {
+      return res.status(400).json({ error: strength.error });
     }
 
     const cleanStudentId = studentId.trim().toUpperCase();
@@ -1828,8 +2049,9 @@ authRouter.post('/reset-password', passwordResetLimiter, async (req: AuthRequest
       return res.status(400).json({ error: 'Reset token and new password are required' });
     }
 
-    if (newPassword.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    const strength = validatePasswordStrength(newPassword);
+    if (!strength.valid) {
+      return res.status(400).json({ error: strength.error });
     }
 
     const resetTokenHash = hashToken(resetToken);

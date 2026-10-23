@@ -458,6 +458,21 @@ export const passwordResets = pgTable('password_resets', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const adminVerificationSessions = pgTable('admin_verification_sessions', {
+  id: serial('id').primaryKey(),
+  verifyToken: text('verify_token').notNull().unique(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  codeHash: text('code_hash').notNull(),
+  attemptsRemaining: integer('attempts_remaining').default(5).notNull(),
+  resendCount: integer('resend_count').default(0).notNull(),
+  lastResendAt: timestamp('last_resend_at').defaultNow().notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  index('admin_verif_token_idx').on(t.verifyToken),
+  index('admin_verif_user_idx').on(t.userId),
+]);
+
 // ============================================================================
 // 14. HOMEWORK & SUBMISSIONS
 // ============================================================================

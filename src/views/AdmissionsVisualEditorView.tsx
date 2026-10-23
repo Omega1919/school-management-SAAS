@@ -34,12 +34,15 @@ import { apiRequest } from '../lib/api.ts';
 import { DatePicker } from '../components/DatePicker.tsx';
 import { sanitizeHtml } from '../lib/sanitize.ts';
 
-// Preset safe hero images for quick selection in Hero Slide Manager
-import defaultHero1 from '../assets/images/library_scholar_top_banner_1790844349643.jpg';
-import defaultHero2 from '../assets/images/library_study_circle_1790843982330.jpg';
-import defaultHero3 from '../assets/images/campus_quad_walkway_1790843995898.jpg';
-import defaultHero4 from '../assets/images/science_lab_scholar_1790844011577.jpg';
-import defaultHero5 from '../assets/images/modern_auditorium_hall_1790844023473.jpg';
+// Preset safe hero images for quick selection in Hero Slide Manager (optimized WebP format)
+import defaultHero1 from '../assets/images/library_scholar_top_banner_1790844349643.webp';
+import defaultHero2 from '../assets/images/library_study_circle_1790843982330.webp';
+import defaultHero3 from '../assets/images/campus_quad_walkway_1790843995898.webp';
+import defaultHero4 from '../assets/images/science_lab_scholar_1790844011577.webp';
+import defaultHero5 from '../assets/images/modern_auditorium_hall_1790844023473.webp';
+
+const HERO_BLUR_LQIP =
+  'data:image/webp;base64,UklGRsAAAABXRUJQVlA4ILQAAADQBACdASoYAA0APu1iqU2ppaOiMAgBMB2JYgCxDE3J/sUBZ+Dfql5dwumv3ZwISAD+yWHYP+X0yHS2oOgKL8tkGNrXpZvIGF88Yz0uKNT/4SW4wNf/2dF1vnpsfsv6LRb9IrSQIAmMW0GDdUciAPzHrWUz8wsUcwdtW/FNeXlO+aNgEnNvuGgm+dW43Wtdi6X9eVswxrlssuTOvbBZkr2ORKPsphm6ErEvrH6GLTOO2uVzCAA=';
 
 interface HeroSlide {
   id: number;
@@ -688,9 +691,26 @@ export const AdmissionsVisualEditorView: React.FC<AdmissionsVisualEditorViewProp
             <section className="relative min-h-[520px] sm:min-h-[580px] lg:min-h-[640px] flex flex-col justify-between p-4 sm:p-8 lg:p-12 overflow-hidden text-white bg-slate-950">
               {/* Background Carousel */}
               <div className="absolute inset-0 z-0 overflow-hidden select-none bg-slate-950">
+                {/* Instant Blur LQIP Placeholder */}
+                <div
+                  className="absolute inset-0 bg-cover bg-center transform scale-110 filter blur-xl opacity-100"
+                  style={{
+                    backgroundImage: `url("${HERO_BLUR_LQIP}")`,
+                    backgroundPosition: 'center center',
+                    backgroundSize: 'cover',
+                  }}
+                  aria-hidden="true"
+                />
                 {displayBackgrounds.map((img, idx) => (
                   <div key={idx} className={`absolute inset-0 transition-opacity duration-1000 ${idx === 0 ? 'opacity-100' : 'opacity-0'}`}>
-                    <img src={img.src} alt={img.title} className="w-full h-full object-cover" />
+                    <img
+                      src={img.src}
+                      alt={img.title}
+                      fetchPriority={idx === 0 ? 'high' : 'auto'}
+                      loading={idx === 0 ? 'eager' : 'lazy'}
+                      decoding="async"
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 ))}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-slate-950/50 to-black/60" />

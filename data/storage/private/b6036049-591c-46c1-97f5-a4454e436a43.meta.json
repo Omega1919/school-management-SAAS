@@ -1,0 +1,11 @@
+{
+  "fileId": "b6036049-591c-46c1-97f5-a4454e436a43",
+  "storageKey": "private/b6036049-591c-46c1-97f5-a4454e436a43.pdf",
+  "filename": "birth_certificate.pdf",
+  "mimeType": "application/pdf",
+  "size": 127,
+  "category": "admission_document",
+  "isPublic": false,
+  "url": "/api/admissions/documents/b6036049-591c-46c1-97f5-a4454e436a43",
+  "createdAt": "2026-10-16T08:45:16.593Z"
+}

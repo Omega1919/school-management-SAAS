@@ -1389,7 +1389,10 @@ export const TimetableView: React.FC = () => {
                     type="number"
                     min={0}
                     value={periodFormNumber}
-                    onChange={(e) => setPeriodFormNumber(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setPeriodFormNumber(isNaN(val) ? 0 : val);
+                    }}
                     required
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-purple-500"
                   />
