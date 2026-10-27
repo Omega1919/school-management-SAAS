@@ -10,6 +10,7 @@ import path from 'path';
 import os from 'os';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql } from 'drizzle-orm';
+import { assertPostgresApplicationRoleIsSafe } from './postgres-role-check.ts';
 
 declare global {
   var _postgresPool: any;
@@ -272,10 +273,7 @@ export async function verifyDatabase(): Promise<void> {
     const roleCheck = await pool.query(
       'SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user'
     );
-    const role = roleCheck.rows?.[0];
-    if (!role || role.rolsuper || role.rolbypassrls) {
-      throw new Error('Multi-school security requires a PostgreSQL application role without SUPERUSER or BYPASSRLS privileges.');
-    }
+    assertPostgresApplicationRoleIsSafe(roleCheck.rows?.[0]);
   }
 
   // Execute versioned schema migrations on boot
