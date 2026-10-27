@@ -92,8 +92,8 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
 
       // Check token version to enforce server-side session invalidation on password reset or logout
       if (
-        typeof jwtPayload.tokenVersion === 'number' &&
-        typeof dbUser.tokenVersion === 'number' &&
+        typeof jwtPayload.tokenVersion !== 'number' ||
+        typeof dbUser.tokenVersion !== 'number' ||
         jwtPayload.tokenVersion !== dbUser.tokenVersion
       ) {
         // Token has been revoked

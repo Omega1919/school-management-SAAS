@@ -21,6 +21,7 @@ import { useSettings } from '../context/SettingsContext.tsx';
 import { apiRequest } from '../lib/api.ts';
 import { StatCard } from '../components/StatCard.tsx';
 import { Badge } from '../components/Badge.tsx';
+import { PortalWelcomeArt } from '../components/PortalWelcomeArt.tsx';
 
 interface DashboardStats {
   studentsCount: number;
@@ -35,7 +36,7 @@ interface DashboardStats {
 
 export const DashboardView: React.FC<{ onNavigate: (view: string) => void }> = ({ onNavigate }) => {
   const { user } = useAuth();
-  const { currencySymbol } = useSettings();
+  const { currencySymbol, schoolName } = useSettings();
 
   const [stats, setStats] = useState<DashboardStats>({
     studentsCount: 0,
@@ -78,19 +79,21 @@ export const DashboardView: React.FC<{ onNavigate: (view: string) => void }> = (
   const isTeacher = user?.role === 'teacher';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7" aria-busy={loading}>
       {/* Welcome Banner */}
-      <div className="bg-linear-to-r from-purple-700 via-indigo-700 to-indigo-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 -mt-10 -mr-10 w-64 h-64 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-        <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-purple-200 text-xs font-semibold backdrop-blur-xs mb-3 border border-white/20">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>Academic Session 2025/2026 • First Term</span>
+      <section className="relative isolate overflow-hidden rounded-[28px] border border-violet-100 bg-gradient-to-br from-white via-white to-violet-100/80 p-5 shadow-sm shadow-violet-950/[0.04] sm:p-8">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-8 -top-20 -z-10 h-72 w-72 rounded-full bg-violet-300/40 blur-3xl" />
+        <div aria-hidden="true" className="pointer-events-none absolute bottom-0 right-1/4 -z-10 h-24 w-48 rounded-full bg-indigo-100/80 blur-2xl" />
+        <div className="relative z-10 flex items-center justify-between gap-5">
+        <div className="min-w-0 max-w-3xl flex-1">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white/80 px-3 py-1.5 text-[11px] font-bold text-violet-800 shadow-sm">
+            <Sparkles className="h-3.5 w-3.5 text-violet-600" />
+            <span>{schoolName} <span className="mx-1 text-violet-300">/</span> Academic Session 2025/2026 • First Term</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
             Welcome back, {user?.fullName || 'User'}!
           </h1>
-          <p className="mt-2 text-sm text-purple-100 leading-relaxed">
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
             {isSuperAdmin &&
               'System is fully operational. All academic departments, student registers, and fee reconciliation modules are in sync.'}
             {isTeacher &&
@@ -100,36 +103,38 @@ export const DashboardView: React.FC<{ onNavigate: (view: string) => void }> = (
               'Here is a quick summary of academic progress, communications, and upcoming events.'}
           </p>
 
-          <div className="mt-5 flex flex-wrap gap-2.5">
+          <div className="mt-6 flex flex-wrap gap-2.5">
             <button
               onClick={() => onNavigate('attendance')}
-              className="px-4 py-2 bg-white text-purple-900 font-semibold text-xs sm:text-sm rounded-xl shadow-md hover:bg-purple-50 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-violet-700 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-violet-700/20 transition-all hover:bg-violet-800 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200 sm:text-sm"
             >
-              <CalendarCheck className="w-4 h-4 text-purple-700" />
+              <CalendarCheck className="h-4 w-4 text-violet-100" />
               <span>{isTeacher ? 'Mark Today Attendance' : 'Attendance Register'}</span>
             </button>
             <button
               onClick={() => onNavigate('announcements')}
-              className="px-4 py-2 bg-white/15 text-white font-semibold text-xs sm:text-sm rounded-xl hover:bg-white/25 active:scale-95 transition-all border border-white/20 cursor-pointer flex items-center gap-1.5"
+              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-violet-200 bg-white/80 px-4 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-violet-300 hover:bg-white active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200 sm:text-sm"
             >
-              <Bell className="w-4 h-4" />
+              <Bell className="h-4 w-4 text-violet-700" />
               <span>Announcements</span>
             </button>
             {isSuperAdmin && (
               <button
                 onClick={() => onNavigate('students')}
-                className="px-4 py-2 bg-white/15 text-white font-semibold text-xs sm:text-sm rounded-xl hover:bg-white/25 active:scale-95 transition-all border border-white/20 cursor-pointer flex items-center gap-1.5"
+                className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-violet-200 bg-white/80 px-4 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-violet-300 hover:bg-white active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200 sm:text-sm"
               >
-                <PlusCircle className="w-4 h-4" />
+                <PlusCircle className="h-4 w-4 text-violet-700" />
                 <span>Enroll New Student</span>
               </button>
             )}
           </div>
         </div>
-      </div>
+        <PortalWelcomeArt role={isSuperAdmin ? 'super_admin' : isTeacher ? 'teacher' : user?.role === 'parent' ? 'parent' : 'student'} className="hidden w-44 shrink-0 lg:flex xl:w-52" />
+        </div>
+      </section>
 
       {/* KPI Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Total Students"
           value={stats.studentsCount.toLocaleString()}
@@ -169,16 +174,21 @@ export const DashboardView: React.FC<{ onNavigate: (view: string) => void }> = (
       </div>
 
       {/* Quick Action Matrix */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         {/* Left 2 Cols: Main Operations & Recent Logs */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="space-y-5 xl:col-span-2">
           {/* Quick Operations Strip */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-purple-600" />
-              <span>Core Academic Workstations</span>
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <section className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-700">At a glance</p>
+                <h3 className="mt-1 flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
+                  <TrendingUp className="h-4 w-4 text-violet-600" /> Core academic workstations
+                </h3>
+              </div>
+              <span className="hidden rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-800 sm:inline-flex">Quick access</span>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
               {[
                 {
                   id: 'students',
@@ -214,32 +224,32 @@ export const DashboardView: React.FC<{ onNavigate: (view: string) => void }> = (
                   <button
                     key={op.id}
                     onClick={() => onNavigate(op.id)}
-                    className="p-3.5 rounded-xl border border-slate-200/80 hover:border-purple-300 hover:shadow-md transition-all text-left bg-slate-50/50 hover:bg-white group cursor-pointer"
+                    className="group cursor-pointer rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 text-left transition-all hover:border-violet-200 hover:bg-white hover:shadow-md focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200"
                   >
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-2.5 border ${op.color}`}>
+                    <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl border ${op.color}`}>
                       <Icon className="w-4 h-4" />
                     </div>
-                    <p className="text-xs font-bold text-slate-800 group-hover:text-purple-600 transition-colors">
+                    <p className="text-sm font-bold text-slate-800 transition-colors group-hover:text-violet-700">
                       {op.name}
                     </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{op.desc}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">{op.desc}</p>
                   </button>
                 );
               })}
             </div>
-          </div>
+          </section>
 
           {/* Recent Audit / System Activities */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs">
+          <section className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              <h3 className="flex items-center gap-2 text-sm font-bold tracking-tight text-slate-900">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 <span>Recent System Activities</span>
               </h3>
               {isSuperAdmin && (
                 <button
                   onClick={() => onNavigate('audit-logs')}
-                  className="text-xs font-semibold text-purple-600 hover:text-purple-700 flex items-center gap-1 cursor-pointer"
+                  className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200"
                 >
                   <span>Full Audit Trail</span>
                   <ArrowUpRight className="w-3.5 h-3.5" />
@@ -271,20 +281,20 @@ export const DashboardView: React.FC<{ onNavigate: (view: string) => void }> = (
                 No recent activity logs recorded yet.
               </div>
             )}
-          </div>
+          </section>
         </div>
 
         {/* Right Col: Announcements & Notice Board */}
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs">
+          <section className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              <h3 className="flex items-center gap-2 text-sm font-bold tracking-tight text-slate-900">
                 <Bell className="w-4 h-4 text-purple-600" />
                 <span>Notice Board</span>
               </h3>
               <button
                 onClick={() => onNavigate('announcements')}
-                className="text-xs font-semibold text-purple-600 hover:text-purple-700 cursor-pointer"
+                className="cursor-pointer rounded-lg px-2 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 hover:text-violet-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200"
               >
                 View All
               </button>
@@ -317,20 +327,20 @@ export const DashboardView: React.FC<{ onNavigate: (view: string) => void }> = (
                 No announcements published yet.
               </div>
             )}
-          </div>
+          </section>
 
           {/* School Information Card */}
-          <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-md">
+          <div className="rounded-[24px] border border-violet-100 bg-gradient-to-br from-violet-100 via-white to-white p-5 shadow-sm sm:p-6">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-600/30 flex items-center justify-center border border-purple-500/30">
-                <BookOpen className="w-5 h-5 text-purple-400" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-violet-200 bg-white text-violet-700 shadow-sm">
+                <BookOpen className="h-5 w-5" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-white">Academic Calendar</h4>
-                <p className="text-xs text-slate-400">First Term • In Session</p>
+                <h4 className="text-sm font-bold text-slate-900">Academic Calendar</h4>
+                <p className="text-xs text-violet-700">First Term • In Session</p>
               </div>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
+            <p className="text-xs leading-relaxed text-slate-600">
               Continuous assessment tests are scheduled for Week 6. Make sure all subject teachers record homework
               assignments and test scores promptly.
             </p>

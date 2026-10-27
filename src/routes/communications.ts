@@ -94,6 +94,10 @@ communicationsRouter.get('/stream', async (req: AuthRequest, res: Response) => {
     return res.status(401).json({ error: 'Unauthorized: Account is suspended or no longer exists.' });
   }
 
+  // The stream may remain open for hours. Release its tenant transaction and
+  // database connection after the one-time user check above.
+  (res.locals.releaseSchoolContext as (() => void) | undefined)?.();
+
   // Set SSE response headers with anti-buffering directives
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',

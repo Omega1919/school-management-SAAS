@@ -8,11 +8,14 @@ import * as schema from './schema.ts';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { sql } from 'drizzle-orm';
 
 declare global {
   var _postgresPool: any;
   var _drizzleDb: any;
   var _pgliteInstance: any;
+  var _pgliteTenantRoleReady: boolean;
 }
 
 export const createPool = () => {
@@ -166,7 +169,46 @@ export const getDb = () => {
   return global._drizzleDb;
 };
 
-export const db = getDb();
+const baseDb = getDb();
+const schoolTransaction = new AsyncLocalStorage<any>();
+const schoolIdContext = new AsyncLocalStorage<number>();
+
+// Existing routes keep using the `db` export. During API requests it resolves
+// to that request's transaction, where PostgreSQL row security is active.
+export const db = new Proxy(baseDb as any, {
+  get(target, property) {
+    const currentDb = schoolTransaction.getStore() ?? target;
+    const value = Reflect.get(currentDb, property, currentDb);
+    return typeof value === 'function' ? value.bind(currentDb) : value;
+  },
+});
+
+export function getCurrentSchoolId(): number | undefined {
+  return schoolIdContext.getStore();
+}
+
+export async function runWithSchoolContext<T>(schoolId: number, callback: (release: () => void) => Promise<T>): Promise<T> {
+  return schoolIdContext.run(schoolId, () => baseDb.transaction(async (tx: any) => {
+      await tx.execute(sql`SELECT set_config('app.school_id', ${String(schoolId)}, true)`);
+      if (global._pgliteInstance) {
+        // PGlite runs as a superuser by default, which bypasses RLS. Use a
+        // restricted local role so development exercises production row security.
+        await tx.execute(sql`SET LOCAL ROLE sms_app_runtime`);
+      }
+      let releaseTransaction!: () => void;
+      const released = new Promise<void>((resolve) => { releaseTransaction = resolve; });
+      const release = () => releaseTransaction();
+      const result = await schoolTransaction.run(tx, () => callback(release));
+      await released;
+      return result;
+    }));
+}
+
+export async function runWithSchoolTransaction<T>(schoolId: number, callback: () => Promise<T>): Promise<T> {
+  return runWithSchoolContext(schoolId, async (release) => {
+    try { return await callback(); } finally { release(); }
+  });
+}
 
 /**
  * Execute a database operation with automatic retry on transient socket/connection drops
@@ -223,6 +265,18 @@ export async function verifyDatabase(): Promise<void> {
       throw new Error(`Database verification query failed: ${safeErr}`);
     }
   });
+
+  // Row-level security cannot protect a process using a PostgreSQL superuser
+  // or a role granted BYPASSRLS, even when FORCE ROW LEVEL SECURITY is set.
+  if (isProd) {
+    const roleCheck = await pool.query(
+      'SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user'
+    );
+    const role = roleCheck.rows?.[0];
+    if (!role || role.rolsuper || role.rolbypassrls) {
+      throw new Error('Multi-school security requires a PostgreSQL application role without SUPERUSER or BYPASSRLS privileges.');
+    }
+  }
 
   // Execute versioned schema migrations on boot
   try {

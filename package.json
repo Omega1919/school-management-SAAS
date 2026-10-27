@@ -3,13 +3,17 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "db:seed:test": "tsx -e \"import { seedInitialData } from './src/db/seed.ts'; seedInitialData(true).then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });\"",
+    "db:seed:test": "tsx -e \"import { db, runWithSchoolTransaction, verifyDatabase } from './src/db/index.ts'; import { schools } from './src/db/schema.ts'; import { eq } from 'drizzle-orm'; import { seedInitialData } from './src/db/seed.ts'; verifyDatabase().then(async () => { const [school] = await db.select({ id: schools.id }).from(schools).where(eq(schools.slug, process.env.DEFAULT_SCHOOL_SLUG || 'springfield')).limit(1); if (!school) throw new Error('Default school is missing'); await runWithSchoolTransaction(school.id, () => seedInitialData(true)); }).then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });\"",
+    "verify:multischool": "node --import tsx scripts/verify-multischool.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

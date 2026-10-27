@@ -1,5 +1,46 @@
 @import "tailwindcss";
 
+@theme {
+  --color-purple-50: #f6f3f9;
+  --color-purple-100: #ece5f3;
+  --color-purple-200: #dacde8;
+  --color-purple-300: #c4add9;
+  --color-purple-400: #a88cc2;
+  --color-purple-500: #8b6aa9;
+  --color-purple-600: #74538f;
+  --color-purple-700: #5e4277;
+  --color-purple-800: #4c365f;
+  --color-purple-900: #3c2d4d;
+  --color-purple-950: #2a2135;
+  --color-violet-50: #f4f2f8;
+  --color-violet-100: #e8e4f0;
+  --color-violet-200: #d3cce4;
+  --color-violet-300: #b6a9d1;
+  --color-violet-400: #9682b8;
+  --color-violet-500: #79639e;
+  --color-violet-600: #624b84;
+  --color-violet-700: #503c6d;
+  --color-violet-800: #403257;
+  --color-violet-900: #332945;
+  --color-violet-950: #241f32;
+}
+
+:root {
+  color-scheme: light;
+  --app-canvas: #e7e4ed;
+  --app-chrome: #efecf4;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--app-canvas);
+}
+
 /* Smooth marquee text slider for top announcement ticker */
 @keyframes marquee {
   0% { transform: translateX(100%); }
@@ -70,6 +111,56 @@
   animation: fadeUp 1.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* The public admissions portal keeps its clear, light text palette while using
+   more muted surfaces than the brighter original white/beige treatment. */
+.admissions-public-page {
+  background-color: #e4e2eb;
+}
+
+.admissions-public-page .bg-white {
+  background-color: #f1eff5;
+}
+
+.admissions-public-page [class~="bg-white/95"] {
+  background-color: rgb(241 239 245 / 95%);
+}
+
+.admissions-public-page .bg-slate-50 {
+  background-color: #e8e6ee;
+}
+
+.admissions-public-page [class~="bg-slate-50/70"] {
+  background-color: rgb(225 223 233 / 88%);
+}
+
+.admissions-public-page .bg-slate-100 {
+  background-color: #e2e0e9;
+}
+
+.admissions-public-page .bg-stone-50 {
+  background-color: #eceaf0;
+}
+
+.admissions-public-page [class~="bg-stone-50/60"] {
+  background-color: rgb(236 234 240 / 88%);
+}
+
+.admissions-public-page .bg-stone-100 {
+  background-color: #e5e3eb;
+}
+
+.admissions-public-page .bg-purple-50 {
+  background-color: #ebe7f0;
+}
+
+.admissions-public-page .bg-purple-100 {
+  background-color: #e1dce9;
+}
+
+.admissions-public-page .bg-indigo-50 {
+  background-color: #e7e4ef;
+}
+
 /* Class-based scroll reveal helpers */
 .reveal-on-scroll {
   opacity: 0;
@@ -92,6 +183,134 @@
     transform: none !important;
     transition: none !important;
     animation: none !important;
+  }
+}
+
+.admissions-public-page .animate-fadeIn {
+  animation-duration: 280ms;
+}
+
+.auth-login {
+  background:
+    radial-gradient(ellipse at 10% 5%, rgb(121 99 158 / 14%), transparent 38%),
+    #111522;
+}
+
+.auth-login-panel {
+  background: linear-gradient(155deg, #fbfaff 0%, #f5f3f9 100%);
+  color: #20263a;
+  border-right: 1px solid #e4e0ec;
+}
+
+.auth-login input:not([type="checkbox"]) {
+  border: 1px solid rgb(148 163 184 / 24%);
+  border-radius: 0.8rem;
+  background-color: rgb(13 17 28 / 72%);
+  padding: 0.75rem 0.9rem;
+  min-height: 2.9rem;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.auth-login input:not([type="checkbox"]):focus {
+  background-color: #111522;
+  box-shadow: 0 0 0 3px rgb(139 92 246 / 18%);
+}
+
+.auth-login-panel input:not([type="checkbox"]) {
+  color: #20263a;
+  background-color: #fff;
+  border-color: #d9d5e2;
+  box-shadow: 0 1px 2px rgb(30 32 48 / 4%);
+}
+
+.auth-login-panel input:not([type="checkbox"]):focus {
+  background-color: #fff;
+  border-color: #8064ad;
+  box-shadow: 0 0 0 3px rgb(121 99 158 / 16%);
+}
+
+.auth-login-panel input::placeholder {
+  color: #8b91a0;
+}
+
+.auth-login-panel .text-zinc-400,
+.auth-login-panel .text-zinc-500 {
+  color: #667085;
+}
+
+.auth-login-panel .text-zinc-200 {
+  color: #475066;
+}
+
+.auth-login-panel .auth-account-footer {
+  border-color: #e2deea;
+}
+
+.auth-login :focus-visible,
+.auth-reset :focus-visible {
+  outline: 2px solid #b9a4e2;
+  outline-offset: 3px;
+}
+
+.auth-reset {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(121 99 158 / 18%), transparent 50%),
+    #111522;
+}
+
+.auth-reset-card {
+  background: linear-gradient(155deg, #1b2030 0%, #151925 100%);
+  border-color: rgb(148 163 184 / 20%);
+}
+
+@media (max-width: 1023px) {
+  .auth-login {
+    height: auto;
+    overflow: visible;
+  }
+
+  .auth-login-panel {
+    min-height: min(70vh, 680px);
+    border-right: 0;
+  }
+
+  .auth-login-hero {
+    position: relative;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-login *,
+  .auth-reset *,
+  .auth-login *::before,
+  .auth-login *::after,
+  .auth-reset *::before,
+  .auth-reset *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.admissions-public-page :focus-visible {
+  outline: 3px solid #624b84;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admissions-public-page *,
+  .admissions-public-page *::before,
+  .admissions-public-page *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .admissions-public-page .animate-marquee {
+    animation: none !important;
+    white-space: normal;
   }
 }
 

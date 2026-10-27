@@ -85,15 +85,15 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({ onBackToLo
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 sm:p-8">
+    <div className="auth-reset min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8">
+      <div className="auth-reset-card w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8">
         {/* Header Icon & Title */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400 mb-4 shadow-inner">
+          <div className="w-14 h-14 rounded-2xl bg-purple-600/15 border border-purple-400/25 flex items-center justify-center text-purple-300 mb-4 shadow-inner shadow-purple-950/50">
             <KeyRound className="w-7 h-7" />
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Set New Password</h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-xs">
+          <p className="text-xs sm:text-sm text-slate-300/75 mt-2 max-w-xs leading-relaxed">
             Create a cryptographically secure, resilient password to protect your school account.
           </p>
         </div>
@@ -167,7 +167,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({ onBackToLo
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                  tabIndex={-1}
+                  aria-label={showPassword ? 'Hide new password' : 'Show new password'}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -192,7 +192,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({ onBackToLo
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                  tabIndex={-1}
+                  aria-label={showConfirmPassword ? 'Hide confirmation password' : 'Show confirmation password'}
                 >
                   {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>

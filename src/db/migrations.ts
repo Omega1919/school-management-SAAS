@@ -1158,6 +1158,211 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN null; END $$;
 `,
   },
+  {
+    version: 23,
+    name: '0023_fee_reminder_tracking',
+    sql: `ALTER TABLE fees ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMP;`,
+  },
+  {
+    version: 24,
+    name: '0024_shared_database_school_tenancy',
+    sql: `
+CREATE TABLE IF NOT EXISTS schools (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  domain TEXT UNIQUE,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO schools (name, slug)
+SELECT COALESCE((SELECT school_name FROM school_settings ORDER BY id LIMIT 1), 'Springfield International Academy'), 'springfield'
+ON CONFLICT (slug) DO NOTHING;
+
+UPDATE schools
+SET name = COALESCE((SELECT school_name FROM school_settings ORDER BY id LIMIT 1), name)
+WHERE slug = 'springfield';
+
+DO $$
+DECLARE table_name TEXT;
+DECLARE tenant_tables TEXT[] := ARRAY[
+  'users', 'academic_sessions', 'academic_terms', 'departments', 'classes', 'subjects', 'teachers', 'students',
+  'student_enrollments', 'parents', 'parent_students', 'parent_invitations', 'teacher_invitations', 'class_subjects',
+  'attendance', 'class_attendance_submissions', 'results', 'fees', 'payments', 'announcements', 'audit_logs',
+  'password_resets', 'admin_verification_sessions', 'auth_verification_challenges', 'user_sessions', 'homeworks',
+  'homework_submissions', 'conversations', 'messages', 'school_settings', 'timetable_periods', 'timetables',
+  'admission_applications', 'admission_application_logs', 'public_portal_settings', 'public_portal_hero_slides',
+  'blog_categories', 'blog_posts', 'important_dates', 'admission_requirements', 'faqs'
+];
+BEGIN
+  FOREACH table_name IN ARRAY tenant_tables LOOP
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS school_id INTEGER REFERENCES schools(id)', table_name);
+    EXECUTE format('UPDATE %I SET school_id = (SELECT id FROM schools WHERE slug = ''springfield'') WHERE school_id IS NULL', table_name);
+    EXECUTE format('ALTER TABLE %I ALTER COLUMN school_id SET DEFAULT current_setting(''app.school_id'')::integer', table_name);
+    EXECUTE format('ALTER TABLE %I ALTER COLUMN school_id SET NOT NULL', table_name);
+  END LOOP;
+END $$;
+
+-- Identifiers such as email, academic year, student number and invoice number
+-- are unique within a school rather than across the entire shared database.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_uid_key;
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key;
+ALTER TABLE academic_sessions DROP CONSTRAINT IF EXISTS academic_sessions_name_key;
+ALTER TABLE departments DROP CONSTRAINT IF EXISTS departments_code_key;
+ALTER TABLE subjects DROP CONSTRAINT IF EXISTS subjects_code_key;
+ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_employee_id_key;
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_student_id_key;
+ALTER TABLE parents DROP CONSTRAINT IF EXISTS parents_parent_id_key;
+ALTER TABLE teacher_invitations DROP CONSTRAINT IF EXISTS teacher_invitations_email_key;
+ALTER TABLE teacher_invitations DROP CONSTRAINT IF EXISTS teacher_invitations_employee_id_key;
+ALTER TABLE fees DROP CONSTRAINT IF EXISTS fees_invoice_number_key;
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_payment_reference_key;
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_receipt_number_key;
+ALTER TABLE admission_applications DROP CONSTRAINT IF EXISTS admission_applications_application_number_key;
+ALTER TABLE blog_categories DROP CONSTRAINT IF EXISTS blog_categories_slug_key;
+ALTER TABLE blog_posts DROP CONSTRAINT IF EXISTS blog_posts_slug_key;
+DROP INDEX IF EXISTS fees_invoice_number_unique_idx;
+DROP INDEX IF EXISTS academic_sessions_current_unique_idx;
+DROP INDEX IF EXISTS academic_terms_current_unique_idx;
+DROP INDEX IF EXISTS admission_apps_number_idx;
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_school_email_unique_idx ON users (school_id, email);
+CREATE UNIQUE INDEX IF NOT EXISTS users_school_uid_unique_idx ON users (school_id, uid);
+CREATE UNIQUE INDEX IF NOT EXISTS academic_sessions_school_name_unique_idx ON academic_sessions (school_id, name);
+CREATE UNIQUE INDEX IF NOT EXISTS academic_sessions_current_unique_idx ON academic_sessions (school_id, is_current) WHERE is_current = true;
+CREATE UNIQUE INDEX IF NOT EXISTS academic_terms_current_unique_idx ON academic_terms (school_id, is_current) WHERE is_current = true;
+CREATE UNIQUE INDEX IF NOT EXISTS departments_school_code_unique_idx ON departments (school_id, code);
+CREATE UNIQUE INDEX IF NOT EXISTS subjects_school_code_unique_idx ON subjects (school_id, code);
+CREATE UNIQUE INDEX IF NOT EXISTS teachers_school_employee_unique_idx ON teachers (school_id, employee_id);
+CREATE UNIQUE INDEX IF NOT EXISTS students_school_student_id_unique_idx ON students (school_id, student_id);
+CREATE UNIQUE INDEX IF NOT EXISTS parents_school_parent_id_unique_idx ON parents (school_id, parent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS teacher_invitations_school_email_unique_idx ON teacher_invitations (school_id, email);
+CREATE UNIQUE INDEX IF NOT EXISTS teacher_invitations_school_employee_unique_idx ON teacher_invitations (school_id, employee_id);
+CREATE UNIQUE INDEX IF NOT EXISTS fees_school_invoice_unique_idx ON fees (school_id, invoice_number);
+CREATE UNIQUE INDEX IF NOT EXISTS payments_school_reference_unique_idx ON payments (school_id, payment_reference);
+CREATE UNIQUE INDEX IF NOT EXISTS payments_school_receipt_unique_idx ON payments (school_id, receipt_number);
+CREATE UNIQUE INDEX IF NOT EXISTS admission_apps_number_idx ON admission_applications (school_id, application_number);
+CREATE UNIQUE INDEX IF NOT EXISTS blog_categories_school_slug_unique_idx ON blog_categories (school_id, slug);
+CREATE UNIQUE INDEX IF NOT EXISTS blog_posts_school_slug_unique_idx ON blog_posts (school_id, slug);
+CREATE UNIQUE INDEX IF NOT EXISTS school_settings_one_per_school_idx ON school_settings (school_id);
+CREATE UNIQUE INDEX IF NOT EXISTS public_portal_settings_one_per_school_idx ON public_portal_settings (school_id);
+
+DO $$
+DECLARE table_name TEXT;
+DECLARE tenant_tables TEXT[] := ARRAY[
+  'users', 'academic_sessions', 'academic_terms', 'departments', 'classes', 'subjects', 'teachers', 'students',
+  'student_enrollments', 'parents', 'parent_students', 'parent_invitations', 'teacher_invitations', 'class_subjects',
+  'attendance', 'class_attendance_submissions', 'results', 'fees', 'payments', 'announcements', 'audit_logs',
+  'password_resets', 'admin_verification_sessions', 'auth_verification_challenges', 'user_sessions', 'homeworks',
+  'homework_submissions', 'conversations', 'messages', 'school_settings', 'timetable_periods', 'timetables',
+  'admission_applications', 'admission_application_logs', 'public_portal_settings', 'public_portal_hero_slides',
+  'blog_categories', 'blog_posts', 'important_dates', 'admission_requirements', 'faqs'
+];
+BEGIN
+  FOREACH table_name IN ARRAY tenant_tables LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('DROP POLICY IF EXISTS school_tenant_isolation ON %I', table_name);
+    EXECUTE format(
+      'CREATE POLICY school_tenant_isolation ON %I USING (school_id = NULLIF(current_setting(''app.school_id'', true), '''')::integer) WITH CHECK (school_id = NULLIF(current_setting(''app.school_id'', true), '''')::integer)',
+      table_name
+    );
+  END LOOP;
+END $$;
+`,
+  },
+  {
+    version: 25,
+    name: '0025_same_school_relationships',
+    sql: `
+CREATE OR REPLACE FUNCTION enforce_same_school_relationships()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  fk RECORD;
+  key_position INTEGER;
+  child_column TEXT;
+  parent_column TEXT;
+  child_value JSONB;
+  match_values JSONB;
+  parent_school_id INTEGER;
+  has_null_key BOOLEAN;
+BEGIN
+  FOR fk IN
+    SELECT conkey, confkey, confrelid, cardinality(conkey) AS key_count
+    FROM pg_constraint
+    WHERE conrelid = TG_RELID AND contype = 'f'
+  LOOP
+    -- The schools directory is global. The row-level security policy already
+    -- requires this row's school_id to be the active school.
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_attribute
+      WHERE attrelid = fk.confrelid AND attname = 'school_id'
+        AND attnum > 0 AND NOT attisdropped
+    ) THEN
+      CONTINUE;
+    END IF;
+
+    match_values := '{}'::jsonb;
+    has_null_key := FALSE;
+    FOR key_position IN 1..fk.key_count LOOP
+      SELECT attname INTO child_column FROM pg_attribute
+      WHERE attrelid = TG_RELID AND attnum = fk.conkey[key_position];
+      SELECT attname INTO parent_column FROM pg_attribute
+      WHERE attrelid = fk.confrelid AND attnum = fk.confkey[key_position];
+
+      child_value := to_jsonb(NEW) -> child_column;
+      IF child_value IS NULL OR child_value = 'null'::jsonb THEN
+        has_null_key := TRUE;
+        EXIT;
+      END IF;
+      match_values := match_values || jsonb_build_object(parent_column, child_value);
+    END LOOP;
+
+    -- Match the database's default MATCH SIMPLE behavior for nullable FKs.
+    IF has_null_key THEN
+      CONTINUE;
+    END IF;
+
+    EXECUTE format(
+      'SELECT parent_row.school_id FROM %s AS parent_row WHERE to_jsonb(parent_row) @> $1 LIMIT 1',
+      fk.confrelid::regclass
+    ) INTO parent_school_id USING match_values;
+
+    IF parent_school_id IS DISTINCT FROM NEW.school_id THEN
+      RAISE EXCEPTION 'A record may only reference records from the same school.'
+        USING ERRCODE = '23514';
+    END IF;
+  END LOOP;
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+DECLARE table_name TEXT;
+DECLARE tenant_tables TEXT[] := ARRAY[
+  'users', 'academic_sessions', 'academic_terms', 'departments', 'classes', 'subjects', 'teachers', 'students',
+  'student_enrollments', 'parents', 'parent_students', 'parent_invitations', 'teacher_invitations', 'class_subjects',
+  'attendance', 'class_attendance_submissions', 'results', 'fees', 'payments', 'announcements', 'audit_logs',
+  'password_resets', 'admin_verification_sessions', 'auth_verification_challenges', 'user_sessions', 'homeworks',
+  'homework_submissions', 'conversations', 'messages', 'school_settings', 'timetable_periods', 'timetables',
+  'admission_applications', 'admission_application_logs', 'public_portal_settings', 'public_portal_hero_slides',
+  'blog_categories', 'blog_posts', 'important_dates', 'admission_requirements', 'faqs'
+];
+BEGIN
+  FOREACH table_name IN ARRAY tenant_tables LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS enforce_same_school_relationships ON %I', table_name);
+    EXECUTE format(
+      'CREATE TRIGGER enforce_same_school_relationships BEFORE INSERT OR UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION enforce_same_school_relationships()',
+      table_name
+    );
+  END LOOP;
+END $$;
+`,
+  },
 ];
 
 async function executeSql(sql: string): Promise<void> {
@@ -1226,6 +1431,21 @@ export async function runMigrations(): Promise<{ applied: number; total: number 
         throw new Error(`Migration failure [${migration.version} - ${migration.name}]: ${err.message || err}`);
       }
     }
+  }
+
+  if (global._pgliteInstance) {
+    await executeSql(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sms_app_runtime') THEN
+          CREATE ROLE sms_app_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS;
+        END IF;
+      END $$;
+      GRANT USAGE ON SCHEMA public TO sms_app_runtime;
+      GRANT SELECT ON schools TO sms_app_runtime;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sms_app_runtime;
+      GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO sms_app_runtime;
+    `);
+    global._pgliteTenantRoleReady = true;
   }
 
   return { applied: appliedCount, total: sortedMigrations.length };

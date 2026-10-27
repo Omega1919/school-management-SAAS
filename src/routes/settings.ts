@@ -95,6 +95,7 @@ async function handleUpdateSettings(req: AuthRequest, res: Response) {
       contactEmail,
       contactPhone,
       address,
+      timezone,
       attendanceStartTime,
       attendanceCutoffTime,
       attendancePolicy,
@@ -111,8 +112,18 @@ async function handleUpdateSettings(req: AuthRequest, res: Response) {
 
     const validLevelSystems = ['class', 'level', 'grade', 'cohort'];
     const safeLevelSystem = levelSystem && validLevelSystems.includes(levelSystem) ? levelSystem : 'class';
-
     const list = await db.select().from(schoolSettings).limit(1);
+    let safeTimezone = 'Africa/Lagos';
+    if (typeof timezone === 'string' && timezone.trim()) {
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: timezone.trim() });
+        safeTimezone = timezone.trim();
+      } catch {
+        return res.status(400).json({ error: 'Please choose a valid timezone.' });
+      }
+    } else if (list.length > 0 && list[0].timezone) {
+      safeTimezone = list[0].timezone;
+    }
     let updated;
     if (list.length === 0) {
       [updated] = await db
@@ -124,6 +135,7 @@ async function handleUpdateSettings(req: AuthRequest, res: Response) {
           contactEmail: contactEmail ? contactEmail.trim() : null,
           contactPhone: contactPhone ? contactPhone.trim() : null,
           address: address ? address.trim() : null,
+          timezone: safeTimezone,
           attendanceStartTime: attendanceStartTime ? attendanceStartTime.trim() : '07:30',
           attendanceCutoffTime: attendanceCutoffTime ? attendanceCutoffTime.trim() : '08:30',
           attendancePolicy: attendancePolicy ? attendancePolicy.trim() : 'flexible',
@@ -141,6 +153,7 @@ async function handleUpdateSettings(req: AuthRequest, res: Response) {
           contactEmail: contactEmail !== undefined ? contactEmail : list[0].contactEmail,
           contactPhone: contactPhone !== undefined ? contactPhone : list[0].contactPhone,
           address: address !== undefined ? address : list[0].address,
+          timezone: timezone !== undefined ? safeTimezone : list[0].timezone,
           attendanceStartTime: attendanceStartTime !== undefined ? attendanceStartTime.trim() : list[0].attendanceStartTime,
           attendanceCutoffTime: attendanceCutoffTime !== undefined ? attendanceCutoffTime.trim() : list[0].attendanceCutoffTime,
           attendancePolicy: attendancePolicy !== undefined ? attendancePolicy.trim() : list[0].attendancePolicy,

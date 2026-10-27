@@ -24,6 +24,7 @@ import { logAuditEvent } from '../lib/audit.ts';
 import { admissionsLimiter, applicationTrackLimiter } from '../middleware/rate-limiter.ts';
 import { eq, and, or, desc, inArray, count, sql, ilike } from 'drizzle-orm';
 import { StorageService } from '../lib/storage.ts';
+import { sendAdmissionSubmittedEmail, sendAdmissionUpdateEmail } from '../lib/email.ts';
 
 export const admissionsRouter = Router();
 
@@ -397,6 +398,19 @@ admissionsRouter.post('/public/apply', admissionsLimiter, async (req, res: Respo
 
       return app;
     });
+
+    try {
+      await sendAdmissionSubmittedEmail({
+        to: createdApp.email,
+        name: `${createdApp.firstName} ${createdApp.lastName}`,
+        applicationNumber: createdApp.applicationNumber,
+        accessKey: rawAccessKey,
+        className: targetClass.name,
+        sessionName: targetSession.name,
+      });
+    } catch (emailError) {
+      console.warn('Admission submission email could not be sent.');
+    }
 
     res.status(201).json({
       success: true,
@@ -898,6 +912,14 @@ admissionsRouter.patch('/applications/:id/status', requireAuth, requireRoleOrPer
       ipAddress: req.ip,
     });
 
+    if (targetStatus !== existing.status && ['needs_information', 'rejected'].includes(targetStatus)) {
+      try {
+        await sendAdmissionUpdateEmail({ to: existing.email, name: `${existing.firstName} ${existing.lastName}`, applicationNumber: existing.applicationNumber, status: targetStatus, notes: cleanNotes });
+      } catch {
+        console.warn('Admission status email could not be sent.');
+      }
+    }
+
     res.json(updated);
   } catch (error: any) {
     console.error('Update application status error:', error);
@@ -974,6 +996,12 @@ async function handleRequestInfo(req: AuthRequest, res: Response) {
       ipAddress: req.ip,
     });
 
+    try {
+      await sendAdmissionUpdateEmail({ to: existing.email, name: `${existing.firstName} ${existing.lastName}`, applicationNumber: existing.applicationNumber, status: 'needs_information', notes: cleanNotes });
+    } catch {
+      console.warn('Admission information request email could not be sent.');
+    }
+
     res.json({ success: true, message: 'Applicant notified for additional information', application: updated });
   } catch (error: any) {
     console.error('Request info error:', error);
@@ -1038,6 +1066,12 @@ admissionsRouter.post('/applications/:id/reject', requireAuth, requireRoleOrPerm
       details: { applicationNumber: existing.applicationNumber, reason: cleanReason },
       ipAddress: req.ip,
     });
+
+    try {
+      await sendAdmissionUpdateEmail({ to: existing.email, name: `${existing.firstName} ${existing.lastName}`, applicationNumber: existing.applicationNumber, status: 'rejected', notes: cleanReason });
+    } catch {
+      console.warn('Admission rejection email could not be sent.');
+    }
 
     res.json({ success: true, message: 'Application rejected', application: updated });
   } catch (error: any) {
@@ -1197,6 +1231,20 @@ admissionsRouter.post('/applications/:id/approve', requireAuth, requireRoleOrPer
       },
       ipAddress: req.ip,
     });
+
+    try {
+      await sendAdmissionUpdateEmail({
+        to: existingApp.email,
+        name: `${existingApp.firstName} ${existingApp.lastName}`,
+        applicationNumber: existingApp.applicationNumber,
+        status: 'approved',
+        notes: cleanNotes,
+        studentId: result.student.studentId,
+        enrollmentToken: rawEnrollmentToken,
+      });
+    } catch {
+      console.warn('Admission confirmation email could not be sent.');
+    }
 
     res.status(200).json({
       success: true,

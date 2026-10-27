@@ -298,29 +298,11 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
   }, [currentBgIndex, loadedSlideIndexes]);
 
   useEffect(() => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     const timer = setInterval(() => {
       setCurrentBgIndex((prev) => (prev + 1) % BACKGROUND_IMAGES.length);
     }, 10000);
     return () => clearInterval(timer);
-  }, []);
-
-  // 3D Parallax Scroll Tracking for Hero Section
-  const [heroScrollY, setHeroScrollY] = useState(0);
-
-  useEffect(() => {
-    let ticking = false;
-    const handleScroll = () => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          setHeroScrollY(window.scrollY);
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   // Escape key listener
@@ -867,7 +849,7 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
   const faqCategories = Array.from(new Set((content?.faqs || []).map((f) => f.category)));
 
   return (
-    <div className="min-h-screen bg-[#FDFBF7] text-slate-800 font-sans selection:bg-purple-500 selection:text-white">
+    <div className="admissions-public-page min-h-screen bg-[#e4e2eb] text-slate-800 font-sans selection:bg-purple-500 selection:text-white">
       {/* ========================================================================= */}
       {/* 0. ADMISSIONS STATUS ALERT BANNER (Dynamically reflecting CMS)             */}
       {/* ========================================================================= */}
@@ -901,7 +883,7 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
       {/* ========================================================================= */}
       {/* 1. TOP NAVIGATION BAR (Sleek Compact White Bar with Portal Purple CTA)     */}
       {/* ========================================================================= */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200/80 shadow-2xs">
+      <header className="sticky top-0 z-40 bg-[#f1eff5]/95 backdrop-blur-md border-b border-stone-200/80 shadow-2xs">
         <div className="w-full px-3 sm:px-6 lg:px-10 xl:px-12 h-12 sm:h-14 flex items-center justify-between gap-2 sm:gap-4">
           {/* Left Section: Mobile Left Hamburger Menu Toggle & Academy Brand */}
           <div className="flex items-center gap-2 sm:gap-3">
@@ -1185,20 +1167,14 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
       </aside>
 
       {/* ========================================================================= */}
-      {/* 2. TOP HERO SECTION WITH 3D SPATIAL SCROLL ANIMATION & CROSSFADING IMAGES  */}
+      {/* 2. HERO SECTION WITH A QUIET CROSS-FADING CAMPUS BACKGROUND              */}
       {/* ========================================================================= */}
       <section
         id="hero"
         className="relative overflow-hidden min-h-[540px] sm:min-h-[600px] lg:min-h-[660px] flex flex-col justify-between py-12 sm:py-16 lg:py-20 px-4 sm:px-6 lg:px-8 text-white"
-        style={{ perspective: '1200px' }}
       >
-        {/* 3D Parallax Background Layer (scrolls at a slower rate so foreground moves over it in 3D) */}
         <div
-          className="absolute inset-0 z-0 overflow-hidden select-none bg-slate-950 will-change-transform pointer-events-none"
-          style={{
-            transform: `translate3d(0, ${heroScrollY * 0.42}px, 0) scale(${1.02 + Math.min(Math.max(heroScrollY / 550, 0), 1) * 0.08})`,
-            transformOrigin: 'center center',
-          }}
+          className="absolute inset-0 z-0 overflow-hidden select-none bg-slate-950 pointer-events-none"
         >
           {/* Instant Blur LQIP Placeholder (renders immediately on millisecond 0, zero network wait) */}
           <div
@@ -1244,34 +1220,15 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
               </div>
             );
           })}
-          {/* Cinematic Gradient Overlays with Good Contrast and dynamic 3D depth */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-slate-950/50 to-black/60" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/70" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-600/20 via-transparent to-black/60" />
-          <div
-            className="absolute inset-0 bg-slate-950 pointer-events-none transition-opacity duration-75"
-            style={{ opacity: Math.min(0.2 + Math.min(Math.max(heroScrollY / 550, 0), 1) * 0.45, 0.75) }}
-          />
+          {/* A consistent navy overlay keeps the changing campus images readable. */}
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-950/80 via-slate-950/55 to-purple-950/70" />
+          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-slate-950/40 to-transparent" />
         </div>
 
-        {/* 3D Spatial Foreground Content Container (Content scrolls upward with 3D elevation over the background) */}
-        <div
-          className="relative z-10 flex flex-col justify-between h-full flex-1 w-full"
-          style={{
-            transformStyle: 'preserve-3d',
-          }}
-        >
-          {/* Hero Typography with 3D Elevation, Subtle Tilt, and Smooth Exit */}
-          <div
-            className="relative text-center max-w-4xl mx-auto my-auto py-6 sm:py-10 px-2 will-change-transform"
-            style={{
-              transform: `translate3d(0, -${heroScrollY * 0.18}px, ${Math.min(heroScrollY * 0.35, 75)}px) rotateX(${Math.min(heroScrollY * 0.015, 6)}deg)`,
-              opacity: Math.max(1 - heroScrollY / 480, 0),
-              transformOrigin: 'center bottom',
-            }}
-          >
+        <div className="relative z-10 flex flex-col justify-between h-full flex-1 w-full">
+          <div className="relative text-center max-w-4xl mx-auto my-auto py-6 sm:py-10 px-2">
             {content?.settings?.heroBadgeText && (
-              <ScrollReveal direction="up" distance={20} duration={1400}>
+              <ScrollReveal direction="up" distance={12} duration={550}>
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/20 backdrop-blur-md border border-purple-400/30 text-xs font-extrabold uppercase tracking-wider text-purple-300 mb-4 shadow-lg">
                   <Sparkles className="w-3.5 h-3.5 text-purple-300" />
                   <span>{content.settings.heroBadgeText}</span>
@@ -1279,13 +1236,13 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
               </ScrollReveal>
             )}
 
-            <ScrollReveal direction="up" distance={24} duration={1600} delay={150}>
+            <ScrollReveal direction="up" distance={14} duration={600} delay={70}>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-tight text-white drop-shadow-2xl">
                 {content?.settings?.heroTitle || "Let's fly to your Dream Academy"}
               </h1>
             </ScrollReveal>
 
-            <ScrollReveal direction="up" distance={24} duration={1600} delay={300}>
+            <ScrollReveal direction="up" distance={14} duration={600} delay={140}>
               <div className="mt-4 sm:mt-6 max-w-2xl mx-auto">
                 <p className="text-xs sm:text-sm md:text-base font-semibold text-white leading-relaxed drop-shadow-xl bg-black/60 sm:bg-black/50 backdrop-blur-md px-5 sm:px-7 py-3 sm:py-4 rounded-2xl border border-white/20 shadow-2xl inline-block">
                   {content?.settings?.heroSubtitle ||
@@ -1295,20 +1252,10 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
             </ScrollReveal>
           </div>
 
-          {/* Hero Floating Placement & Filter Bar with 3D Elevation & Dynamic Shadow */}
-          <div
-            className="relative max-w-4xl mx-auto w-full will-change-transform"
-            style={{
-              transform: `translate3d(0, -${heroScrollY * 0.08}px, ${Math.min(heroScrollY * 0.4, 90)}px) rotateX(${Math.min(heroScrollY * 0.012, 5)}deg)`,
-              transformOrigin: 'center top',
-            }}
-          >
-            <ScrollReveal direction="zoom" distance={24} duration={1700} delay={450} className="w-full">
+          <div className="relative max-w-4xl mx-auto w-full">
+            <ScrollReveal direction="up" distance={12} duration={650} delay={200} className="w-full">
               <div
-                className="bg-white/95 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 sm:p-4 text-slate-800 border border-white/50 w-full transition-shadow duration-150"
-                style={{
-                  boxShadow: `0 ${16 + Math.min(heroScrollY * 0.06, 30)}px ${30 + Math.min(heroScrollY * 0.08, 40)}px rgba(0,0,0,${0.25 + Math.min(heroScrollY * 0.0005, 0.2)})`,
-                }}
+                className="bg-white/95 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 sm:p-4 text-slate-800 border border-white/50 w-full shadow-2xl shadow-slate-950/25 transition-shadow duration-300"
               >
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
                   {/* Session Selector */}
@@ -1391,7 +1338,7 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
       {/* ========================================================================= */}
       {content?.settings?.showPrograms && (
         <section id="programs" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          <ScrollReveal direction="up" distance={28} duration={1700}>
+          <ScrollReveal direction="up" distance={14} duration={600}>
             <div className="text-center mb-12">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/70 text-xs font-bold text-purple-700 mb-3 shadow-2xs">
                 <GraduationCap className="w-3.5 h-3.5 text-purple-600" />
@@ -1443,13 +1390,13 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
                 <ScrollReveal
                   key={prog.id}
                   direction="up"
-                  distance={32}
-                  duration={1700}
-                  delay={(idx % 6) * 120}
+                  distance={16}
+                  duration={650}
+                  delay={(idx % 6) * 45}
                   className="h-full"
                 >
                   <div
-                    className="h-full bg-white rounded-3xl p-6 sm:p-7 shadow-xs hover:shadow-xl transition-all border border-slate-200/90 hover:border-purple-200 flex flex-col justify-between space-y-5 group hover:-translate-y-1.5 duration-300"
+                    className="h-full bg-white rounded-2xl p-6 sm:p-7 shadow-xs hover:shadow-lg transition-all border border-slate-200/90 hover:border-purple-200 flex flex-col justify-between space-y-5 group hover:-translate-y-1 duration-200"
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-3.5">
@@ -1539,7 +1486,7 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
       {content?.settings?.showRequirements && (
         <section id="requirements" className="bg-slate-50/70 border-y border-slate-200/80 py-20">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <ScrollReveal direction="up" distance={28} duration={1700}>
+            <ScrollReveal direction="up" distance={14} duration={600}>
               <div className="text-center mb-12">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/70 text-xs font-bold text-purple-700 mb-3 shadow-2xs">
                   <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
@@ -1559,13 +1506,13 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
                 <ScrollReveal
                   key={req.id || idx}
                   direction="up"
-                  distance={30}
-                  duration={1700}
-                  delay={(idx % 6) * 120}
+                  distance={14}
+                  duration={650}
+                  delay={(idx % 6) * 45}
                   className="h-full"
                 >
                   <div
-                    className="h-full bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs hover:shadow-lg hover:border-purple-200 transition-all hover:-translate-y-1 duration-300 space-y-3.5 flex flex-col justify-between group"
+                    className="h-full bg-white rounded-2xl p-6 border border-slate-200/90 shadow-xs hover:shadow-lg hover:border-purple-200 transition-all hover:-translate-y-1 duration-200 space-y-3.5 flex flex-col justify-between group"
                   >
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
@@ -1601,7 +1548,7 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
       {/* ========================================================================= */}
       {content?.settings?.showImportantDates && (
         <section id="dates" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          <ScrollReveal direction="up" distance={28} duration={1700}>
+          <ScrollReveal direction="up" distance={14} duration={600}>
             <div className="text-center mb-12">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/70 text-xs font-bold text-purple-700 mb-3 shadow-2xs">
                 <Calendar className="w-3.5 h-3.5 text-purple-600" />
@@ -1621,13 +1568,13 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
               <ScrollReveal
                 key={dt.id}
                 direction="up"
-                distance={30}
-                duration={1700}
-                delay={(idx % 6) * 120}
+                distance={14}
+                duration={650}
+                delay={(idx % 6) * 45}
                 className="h-full"
               >
                 <div
-                  className="h-full bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs hover:shadow-lg hover:border-purple-200 transition-all hover:-translate-y-1 duration-300 flex items-start gap-4 sm:gap-5 group"
+                  className="h-full bg-white rounded-2xl p-6 border border-slate-200/90 shadow-xs hover:shadow-lg hover:border-purple-200 transition-all hover:-translate-y-1 duration-200 flex items-start gap-4 sm:gap-5 group"
                 >
                   <div className="bg-gradient-to-br from-purple-50 to-indigo-50/80 border border-purple-200/80 text-purple-900 rounded-2xl p-3 sm:p-3.5 text-center min-w-[76px] shrink-0 shadow-2xs">
                     <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-700 block">
@@ -1680,7 +1627,7 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
       {content?.settings?.showNews && (
         <section id="news" className="bg-slate-50/70 border-t border-slate-200/80 py-20">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <ScrollReveal direction="up" distance={28} duration={1700}>
+            <ScrollReveal direction="up" distance={14} duration={600}>
               <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10">
                 <div>
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/70 text-xs font-bold text-purple-700 mb-3 shadow-2xs">
@@ -1730,13 +1677,13 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
                 <ScrollReveal
                   key={news.id}
                   direction="up"
-                  distance={30}
-                  duration={1700}
-                  delay={(idx % 4) * 130}
+                  distance={14}
+                  duration={650}
+                  delay={(idx % 4) * 50}
                   className="h-full"
                 >
                   <div
-                    className="h-full bg-white rounded-3xl p-6 shadow-xs border border-slate-200/90 hover:border-purple-200 hover:shadow-xl transition-all hover:-translate-y-1 duration-300 flex flex-col justify-between space-y-4 group"
+                    className="h-full bg-white rounded-2xl p-6 shadow-xs border border-slate-200/90 hover:border-purple-200 hover:shadow-lg transition-all hover:-translate-y-1 duration-200 flex flex-col justify-between space-y-4 group"
                   >
                     <div className="space-y-2.5">
                       <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-700 bg-purple-50 border border-purple-200/60 px-2.5 py-1 rounded-lg inline-block">
@@ -1777,7 +1724,7 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
       {/* ========================================================================= */}
       {content?.settings?.showFaqs && (
         <section id="faqs" className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          <ScrollReveal direction="up" distance={28} duration={1700}>
+          <ScrollReveal direction="up" distance={14} duration={600}>
             <div className="text-center mb-12">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/70 text-xs font-bold text-purple-700 mb-3 shadow-2xs">
                 <HelpCircle className="w-3.5 h-3.5 text-purple-600" />
@@ -1829,9 +1776,9 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
                 <ScrollReveal
                   key={faq.id}
                   direction="up"
-                  distance={22}
-                  duration={1600}
-                  delay={(idx % 6) * 90}
+                  distance={12}
+                  duration={600}
+                  delay={(idx % 6) * 40}
                 >
                   <div
                     className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden ${
@@ -1868,7 +1815,7 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
       {content?.settings?.showContact && (
         <section id="contact" className="bg-gradient-to-b from-slate-50/70 to-white border-t border-slate-200/80 py-20">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <ScrollReveal direction="up" distance={28} duration={1700}>
+            <ScrollReveal direction="up" distance={14} duration={600}>
               <div className="text-center mb-12 space-y-2">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/70 text-xs font-bold text-purple-700 mb-2 shadow-2xs">
                   <Phone className="w-3.5 h-3.5 text-purple-600" />
@@ -1885,8 +1832,8 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-5xl mx-auto">
               {/* Email */}
-              <ScrollReveal direction="up" distance={28} duration={1700} delay={0} className="h-full">
-                <div className="h-full bg-white rounded-3xl p-7 border border-slate-200/90 shadow-xs text-center space-y-3.5 hover:shadow-xl hover:border-purple-200 hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between group">
+              <ScrollReveal direction="up" distance={12} duration={600} delay={0} className="h-full">
+                <div className="h-full bg-white rounded-2xl p-7 border border-slate-200/90 shadow-xs text-center space-y-3.5 hover:shadow-lg hover:border-purple-200 hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between group">
                   <div>
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center mx-auto shadow-md shadow-purple-600/20 group-hover:scale-105 transition-transform">
                       <Mail className="w-6 h-6" />
@@ -1906,8 +1853,8 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
               </ScrollReveal>
 
               {/* Phone */}
-              <ScrollReveal direction="up" distance={28} duration={1700} delay={150} className="h-full">
-                <div className="h-full bg-white rounded-3xl p-7 border border-slate-200/90 shadow-xs text-center space-y-3.5 hover:shadow-xl hover:border-purple-200 hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between group">
+              <ScrollReveal direction="up" distance={12} duration={600} delay={60} className="h-full">
+                <div className="h-full bg-white rounded-2xl p-7 border border-slate-200/90 shadow-xs text-center space-y-3.5 hover:shadow-lg hover:border-purple-200 hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between group">
                   <div>
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center mx-auto shadow-md shadow-purple-600/20 group-hover:scale-105 transition-transform">
                       <Phone className="w-6 h-6" />
@@ -1924,8 +1871,8 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
               </ScrollReveal>
 
               {/* Address */}
-              <ScrollReveal direction="up" distance={28} duration={1700} delay={300} className="h-full">
-                <div className="h-full bg-white rounded-3xl p-7 border border-slate-200/90 shadow-xs text-center space-y-3.5 hover:shadow-xl hover:border-purple-200 hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between group">
+              <ScrollReveal direction="up" distance={12} duration={600} delay={120} className="h-full">
+                <div className="h-full bg-white rounded-2xl p-7 border border-slate-200/90 shadow-xs text-center space-y-3.5 hover:shadow-lg hover:border-purple-200 hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between group">
                   <div>
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center mx-auto shadow-md shadow-purple-600/20 group-hover:scale-105 transition-transform">
                       <MapPin className="w-6 h-6" />
@@ -3359,7 +3306,7 @@ export const AdmissionsPublicView: React.FC<AdmissionsPublicViewProps> = ({ onBa
       {/* 11. MULTI-COLUMN FOOTER                                                   */}
       {/* ========================================================================= */}
       <footer className="bg-white border-t border-stone-200/80 pt-12 pb-8 text-xs text-stone-500">
-        <ScrollReveal direction="up" distance={28} duration={1700}>
+        <ScrollReveal direction="up" distance={14} duration={600}>
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
               <div className="space-y-3">

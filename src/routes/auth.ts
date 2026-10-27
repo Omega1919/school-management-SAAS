@@ -180,12 +180,19 @@ async function verifyChallengeCode(
     return { error: 'Verification session and 6-digit code are required.', status: 400 };
   }
 
-  // 1. Look up challenge from authVerificationChallenges
+  // 1. Look up the canonical challenge, including consumed rows. Keeping
+  // consumed rows visible prevents falling back to the legacy mirror during
+  // the small interval between consuming both records.
   let challenge = (await db
     .select()
     .from(authVerificationChallenges)
-    .where(and(eq(authVerificationChallenges.challengeToken, cleanToken), eq(authVerificationChallenges.isConsumed, false)))
+    .where(eq(authVerificationChallenges.challengeToken, cleanToken))
     .limit(1))[0];
+  const isLegacyChallenge = !challenge;
+
+  if (challenge?.isConsumed) {
+    return { error: 'Verification session has expired or was already used. Please sign in again.', status: 400 };
+  }
 
   // Fallback to adminVerificationSessions if necessary
   if (!challenge) {
@@ -233,7 +240,38 @@ async function verifyChallengeCode(
 
   const hashedInput = hashToken(cleanCode);
   if (hashedInput !== challenge.codeHash) {
-    const remaining = challenge.attemptsRemaining - 1;
+    const now = new Date();
+    let remaining: number;
+    if (isLegacyChallenge) {
+      const [updatedLegacy] = await db
+        .update(adminVerificationSessions)
+        .set({ attemptsRemaining: sql`${adminVerificationSessions.attemptsRemaining} - 1` })
+        .where(and(
+          eq(adminVerificationSessions.verifyToken, cleanToken),
+          gt(adminVerificationSessions.attemptsRemaining, 0),
+          gt(adminVerificationSessions.expiresAt, now),
+        ))
+        .returning({ attemptsRemaining: adminVerificationSessions.attemptsRemaining });
+      if (!updatedLegacy) return { error: 'Verification session has expired or is invalid. Please sign in again.', status: 400 };
+      remaining = updatedLegacy.attemptsRemaining;
+    } else {
+      const [updatedChallenge] = await db
+        .update(authVerificationChallenges)
+        .set({ attemptsRemaining: sql`${authVerificationChallenges.attemptsRemaining} - 1` })
+        .where(and(
+          eq(authVerificationChallenges.challengeToken, cleanToken),
+          eq(authVerificationChallenges.isConsumed, false),
+          gt(authVerificationChallenges.attemptsRemaining, 0),
+          gt(authVerificationChallenges.expiresAt, now),
+        ))
+        .returning({ attemptsRemaining: authVerificationChallenges.attemptsRemaining });
+      if (!updatedChallenge) return { error: 'Verification session has expired or is invalid. Please sign in again.', status: 400 };
+      remaining = updatedChallenge.attemptsRemaining;
+      await db
+        .update(adminVerificationSessions)
+        .set({ attemptsRemaining: remaining })
+        .where(eq(adminVerificationSessions.verifyToken, cleanToken));
+    }
     if (remaining <= 0) {
       await db.delete(authVerificationChallenges).where(eq(authVerificationChallenges.challengeToken, cleanToken));
       await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.verifyToken, cleanToken));
@@ -244,24 +282,41 @@ async function verifyChallengeCode(
       };
     }
 
-    await db
-      .update(authVerificationChallenges)
-      .set({ attemptsRemaining: remaining })
-      .where(eq(authVerificationChallenges.challengeToken, cleanToken));
-
-    await db
-      .update(adminVerificationSessions)
-      .set({ attemptsRemaining: remaining })
-      .where(eq(adminVerificationSessions.verifyToken, cleanToken));
-
     return { error: `Invalid verification code. ${remaining} attempt(s) remaining.`, status: 400 };
   }
 
-  // Single-use: atomically mark challenge as consumed and remove session
-  await db
-    .update(authVerificationChallenges)
-    .set({ isConsumed: true })
-    .where(eq(authVerificationChallenges.challengeToken, cleanToken));
+  // Consume the challenge with a conditional write. Concurrent requests with
+  // the same valid code can only consume it once.
+  const consumedAt = new Date();
+  let consumed = false;
+  if (!isLegacyChallenge) {
+    const [consumedChallenge] = await db
+      .update(authVerificationChallenges)
+      .set({ isConsumed: true })
+      .where(and(
+        eq(authVerificationChallenges.challengeToken, cleanToken),
+        eq(authVerificationChallenges.isConsumed, false),
+        gt(authVerificationChallenges.expiresAt, consumedAt),
+        gt(authVerificationChallenges.attemptsRemaining, 0),
+      ))
+      .returning({ id: authVerificationChallenges.id });
+    consumed = Boolean(consumedChallenge);
+  }
+  if (isLegacyChallenge) {
+    // Legacy admin session rows are also consumed atomically for old records.
+    const [consumedLegacy] = await db
+      .delete(adminVerificationSessions)
+      .where(and(
+        eq(adminVerificationSessions.verifyToken, cleanToken),
+        gt(adminVerificationSessions.expiresAt, consumedAt),
+        gt(adminVerificationSessions.attemptsRemaining, 0),
+      ))
+      .returning({ id: adminVerificationSessions.id });
+    consumed = Boolean(consumedLegacy);
+  }
+  if (!consumed) {
+    return { error: 'Verification session has expired, was already used, or is invalid. Please sign in again.', status: 400 };
+  }
   await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.verifyToken, cleanToken));
   simulatedDemoMailbox.delete(cleanToken);
 
@@ -1682,6 +1737,7 @@ authRouter.post('/register-student', registrationLimiter, async (req: AuthReques
       email: result.newUser.email,
       role: 'student',
       fullName: result.newUser.fullName,
+      tokenVersion: result.newUser.tokenVersion,
     });
 
     res.status(201).json({
@@ -1844,6 +1900,7 @@ authRouter.post('/register-parent', registrationLimiter, async (req: AuthRequest
       email: result.parentUser.email,
       role: 'parent',
       fullName: result.parentUser.fullName,
+      tokenVersion: result.parentUser.tokenVersion,
     });
 
     res.status(201).json({
@@ -1963,6 +2020,7 @@ authRouter.post('/register-teacher', registrationLimiter, async (req: AuthReques
       email: result.newUser.email,
       role: 'teacher',
       fullName: result.newUser.fullName,
+      tokenVersion: result.newUser.tokenVersion,
     });
 
     res.status(201).json({
@@ -2343,6 +2401,7 @@ authRouter.post('/register-admin', registrationLimiter, async (req: AuthRequest,
         .update(users)
         .set({
           passwordHash: hashedPassword,
+          tokenVersion: sql`COALESCE(${users.tokenVersion}, 1) + 1`,
           fullName: fullName ? fullName.trim() : existingUser.fullName,
           role: 'super_admin',
           status: 'active',
@@ -2386,6 +2445,7 @@ authRouter.post('/register-admin', registrationLimiter, async (req: AuthRequest,
       email: adminUser.email,
       role: 'super_admin',
       fullName: adminUser.fullName,
+      tokenVersion: adminUser.tokenVersion,
     });
 
     return res.status(201).json({
@@ -2722,6 +2782,7 @@ authRouter.post('/reset-student-password', passwordResetLimiter, async (req: Aut
         id: students.id,
         userId: students.userId,
         enrollmentToken: students.enrollmentToken,
+        enrollmentTokenExpiresAt: students.enrollmentTokenExpiresAt,
         firstName: students.firstName,
         lastName: students.lastName,
       })
@@ -2740,7 +2801,9 @@ authRouter.post('/reset-student-password', passwordResetLimiter, async (req: Aut
     // Check enrollment token verification
     if (enrollmentToken) {
       const hashedGivenEnrollment = hashToken(enrollmentToken.trim().toUpperCase());
-      if (student.enrollmentToken && student.enrollmentToken === hashedGivenEnrollment) {
+      const tokenIsUnexpired = student.enrollmentTokenExpiresAt &&
+        new Date(student.enrollmentTokenExpiresAt).getTime() > Date.now();
+      if (tokenIsUnexpired && student.enrollmentToken && student.enrollmentToken === hashedGivenEnrollment) {
         isVerified = true;
       }
     }

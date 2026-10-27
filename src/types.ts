@@ -209,6 +209,7 @@ export interface AcademicTerm {
 export interface SchoolSettings {
   id: number;
   schoolName: string;
+  logoUrl?: string | null;
   motto?: string;
   currencySymbol: string;
   contactEmail?: string;
@@ -218,6 +219,8 @@ export interface SchoolSettings {
   attendanceStartTime?: string;
   attendanceCutoffTime?: string;
   attendancePolicy?: string;
+  termSystem?: string;
+  levelSystem?: string;
   updatedAt?: string;
 }
 

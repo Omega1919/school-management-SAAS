@@ -16,6 +16,7 @@ import { useSettings } from '../context/SettingsContext.tsx';
 import { useAccountModal } from '../context/AccountModalContext.tsx';
 import { User, LogOut } from 'lucide-react';
 import { apiRequest } from '../lib/api.ts';
+import { PortalWelcomeArt } from '../components/PortalWelcomeArt.tsx';
 
 export const StudentPortalView: React.FC<{ onNavigate: (view: string) => void }> = ({
   onNavigate,
@@ -73,7 +74,7 @@ export const StudentPortalView: React.FC<{ onNavigate: (view: string) => void }>
       {/* Banner */}
       <div className="bg-linear-to-r from-blue-700 via-indigo-700 to-purple-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-blue-200 text-xs font-semibold backdrop-blur-xs mb-3 border border-white/20">
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
               <span>Student Academic Space</span>
@@ -85,6 +86,8 @@ export const StudentPortalView: React.FC<{ onNavigate: (view: string) => void }>
               Stay on top of your daily class schedule, submit homework before the deadline, and inspect your exam scores.
             </p>
           </div>
+
+          <PortalWelcomeArt role="student" className="hidden h-36 w-40 shrink-0 lg:flex" />
 
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
             <button

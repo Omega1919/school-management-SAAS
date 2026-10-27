@@ -84,6 +84,9 @@ export function createMailTransporter(): Transporter {
     }
     cachedTransporter = nodemailer.createTransport(config as any);
   } else {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Outbound email is not configured. Set RESEND_API_KEY or SMTP_HOST and SMTP_PORT.');
+    }
     // Development / test fallback transporter: captures messages safely without remote SMTP
     cachedTransporter = nodemailer.createTransport({
       streamTransport: true,
@@ -102,6 +105,14 @@ export function createMailTransporter(): Transporter {
 export async function sendEmail({ to, subject, text, html }: EmailOptions): Promise<{ success: boolean; messageId?: string }> {
   const from = getEmailFrom();
   const apiKey = process.env.RESEND_API_KEY?.trim();
+
+  // Never send live mail from local development, even if production credentials
+  // happen to be present. The stream transport captures the message locally.
+  if (process.env.NODE_ENV !== 'production') {
+    const previewTransporter = nodemailer.createTransport({ streamTransport: true, newline: 'unix', buffer: true });
+    const info = await previewTransporter.sendMail({ from, to, subject, text, html });
+    return { success: true, messageId: info.messageId };
+  }
 
   if (apiKey) {
     try {
@@ -187,6 +198,30 @@ export async function sendEmail({ to, subject, text, html }: EmailOptions): Prom
       .replace(/(pass|password|pwd|api_key|re_[a-zA-Z0-9_]+)=[^;&\s]+/gi, '$1=***');
     throw new Error(`Failed to dispatch security email: ${safeError}`);
   }
+}
+
+export async function sendAdmissionSubmittedEmail(params: { to: string; name: string; applicationNumber: string; accessKey: string; className: string; sessionName: string }) {
+  const { to, name, applicationNumber, accessKey, className, sessionName } = params;
+  const subject = 'Admission application received';
+  const text = `Hello ${name}, your application ${applicationNumber} for ${className} (${sessionName}) was received. Keep your access key safe: ${accessKey}.`;
+  const html = `<p>Hello ${escapeHtml(name)},</p><p>Your application <strong>${escapeHtml(applicationNumber)}</strong> for ${escapeHtml(className)} (${escapeHtml(sessionName)}) was received.</p><p>Keep this access key private: <strong>${escapeHtml(accessKey)}</strong>.</p>`;
+  return sendEmail({ to, subject, text, html });
+}
+
+export async function sendAdmissionUpdateEmail(params: { to: string; name: string; applicationNumber: string; status: string; notes?: string | null; studentId?: string; enrollmentToken?: string }) {
+  const { to, name, applicationNumber, status, notes, studentId, enrollmentToken } = params;
+  const subject = status === 'approved' ? 'Admission confirmed' : status === 'needs_information' ? 'More information needed for your application' : status === 'rejected' ? 'Admission application update' : 'Admission application status updated';
+  const text = `Hello ${name}, application ${applicationNumber} status: ${status}.${notes ? ` Details: ${notes}` : ''}${studentId ? ` Student ID: ${studentId}.` : ''}${enrollmentToken ? ` Enrollment setup token (valid for 30 days): ${enrollmentToken}.` : ''}`;
+  const html = `<p>Hello ${escapeHtml(name)},</p><p>Your application <strong>${escapeHtml(applicationNumber)}</strong> status is now <strong>${escapeHtml(status.replace('_', ' '))}</strong>.</p>${notes ? `<p>${escapeHtml(notes)}</p>` : ''}${studentId ? `<p>Student ID: <strong>${escapeHtml(studentId)}</strong></p>` : ''}${enrollmentToken ? `<p>Your enrollment setup token (valid for 30 days): <strong>${escapeHtml(enrollmentToken)}</strong></p>` : ''}`;
+  return sendEmail({ to, subject, text, html });
+}
+
+export async function sendLatePaymentReminderEmail(params: { to: string; name: string; invoiceNumber: string; feeTitle: string; balance: string; dueDate: string }) {
+  const { to, name, invoiceNumber, feeTitle, balance, dueDate } = params;
+  const subject = `Overdue fee reminder: ${invoiceNumber}`;
+  const text = `Hello ${name}, invoice ${invoiceNumber} for ${feeTitle} is overdue. Outstanding balance: ${balance}. Due date: ${dueDate}. Please contact the school office to arrange payment.`;
+  const html = `<p>Hello ${escapeHtml(name)},</p><p>Invoice <strong>${escapeHtml(invoiceNumber)}</strong> for ${escapeHtml(feeTitle)} is overdue.</p><p>Outstanding balance: <strong>${escapeHtml(balance)}</strong><br>Due date: ${escapeHtml(dueDate)}</p><p>Please contact the school office to arrange payment.</p>`;
+  return sendEmail({ to, subject, text, html });
 }
 
 /**

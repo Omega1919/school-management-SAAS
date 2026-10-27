@@ -61,33 +61,11 @@ async function processFeePayment({
 
     const fee = feeRecords[0];
 
-    // 2. Strict Role-Based Access Control Verification
-    if (user.role === 'teacher') {
-      throw new Error('FORBIDDEN_TEACHER');
-    } else if (user.role === 'student') {
-      const [s] = await tx
-        .select({ id: students.id })
-        .from(students)
-        .where(eq(students.userId, user.id))
-        .limit(1);
-      if (!s || s.id !== fee.studentId) {
-        throw new Error('FORBIDDEN_STUDENT');
-      }
-    } else if (user.role === 'parent') {
-      const [link] = await tx
-        .select({ id: parentStudents.id })
-        .from(parentStudents)
-        .where(
-          and(
-            eq(parentStudents.parentUserId, user.id),
-            eq(parentStudents.studentId, fee.studentId)
-          )
-        )
-        .limit(1);
-      if (!link) {
-        throw new Error('FORBIDDEN_PARENT');
-      }
-    } else if (user.role !== 'super_admin') {
+    // Payments are manually verified in this demo build. Only school staff
+    // authorized for fee management may mark an invoice as paid; parents and
+    // students can view their balances but cannot self-certify payment.
+    const canRecordPayment = user.role === 'super_admin' || hasPermission(user, 'fee_management');
+    if (!canRecordPayment) {
       throw new Error('FORBIDDEN');
     }
 

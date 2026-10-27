@@ -160,7 +160,7 @@ export const FeesView: React.FC = () => {
           value={`${currencySymbol}${totalCollected.toLocaleString()}`}
           icon={Receipt}
           color="emerald"
-          subtitle="Verified payments in bank"
+          subtitle="Payments recorded by authorized staff"
         />
         <StatCard
           title="Outstanding Arrears"

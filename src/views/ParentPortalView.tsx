@@ -20,6 +20,7 @@ import { useSettings } from '../context/SettingsContext.tsx';
 import { useAccountModal } from '../context/AccountModalContext.tsx';
 import { apiRequest } from '../lib/api.ts';
 import { Badge } from '../components/Badge.tsx';
+import { PortalWelcomeArt } from '../components/PortalWelcomeArt.tsx';
 
 interface ChildData {
   studentId: number;
@@ -84,7 +85,7 @@ export const ParentPortalView: React.FC<{ onNavigate: (view: string) => void }> 
       {/* Welcome Banner */}
       <div className="bg-linear-to-r from-emerald-700 to-teal-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
+          <div className="min-w-0 flex-1">
             <span className="px-3 py-1 rounded-full bg-white/15 text-emerald-200 text-xs font-semibold backdrop-blur-xs mb-3 inline-block border border-white/20">
               Parent Guardian Portal
             </span>
@@ -95,6 +96,8 @@ export const ParentPortalView: React.FC<{ onNavigate: (view: string) => void }> 
               Monitor your children's real-time attendance, test performance, homework completion, and school fee records.
             </p>
           </div>
+
+          <PortalWelcomeArt role="parent" className="hidden h-36 w-40 shrink-0 lg:flex" />
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
             <button

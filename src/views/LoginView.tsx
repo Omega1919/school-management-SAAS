@@ -33,8 +33,6 @@ interface PortalConfig {
   bgGradient: string;
   illustration: React.ComponentType<{ className?: string }>;
   icon: React.ComponentType<{ className?: string }>;
-  defaultEmail: string;
-  defaultPass: string;
   signupTitle: string;
   signupPrompt: string;
   allowSignUp: boolean;
@@ -50,18 +48,18 @@ interface PortalConfig {
 
 const isDev = Boolean(import.meta.env?.DEV);
 
+// Demo access goes through the server-side demo-login action; keep account
+// email/password literals out of this client bundle.
 const PORTAL_CONFIGS: Record<UserRole, PortalConfig> = {
   student: {
     role: 'student',
     urlPath: '/student/login',
     badgeLabel: 'Student Portal',
-    headerTitle: 'Welcome to\nstudent portal',
-    welcomeSubtext: 'Login to access your account',
-    bgGradient: 'from-[#8B5CF6] via-[#7C3AED] to-[#6D28D9]',
+    headerTitle: 'A better day\nstarts here',
+    welcomeSubtext: 'Your classes, progress, and school life in one place.',
+    bgGradient: 'from-[#7166A8] via-[#554B91] to-[#393665]',
     illustration: StudentPortalIllustration,
     icon: BookOpen,
-    defaultEmail: 'student.chinedu@school.com',
-    defaultPass: 'student123',
     signupTitle: 'Student Portal Activation',
     signupPrompt: 'Activate student account with your registered Student ID',
     allowSignUp: true,
@@ -78,13 +76,11 @@ const PORTAL_CONFIGS: Record<UserRole, PortalConfig> = {
     role: 'parent',
     urlPath: '/parent/login',
     badgeLabel: 'Parent Portal',
-    headerTitle: 'Welcome to\nparent portal',
-    welcomeSubtext: 'Login to access your account',
-    bgGradient: 'from-[#059669] via-[#047857] to-[#064E3B]',
+    headerTitle: 'Your child’s\nschool journey',
+    welcomeSubtext: 'Stay connected to learning, updates, and progress.',
+    bgGradient: 'from-[#52877E] via-[#356D67] to-[#274F54]',
     illustration: ParentPortalIllustration,
     icon: Users,
-    defaultEmail: 'parent.ibrahim@school.com',
-    defaultPass: 'parent123',
     signupTitle: 'Parent Account Access',
     signupPrompt: 'Access your parent dashboard linked to your child\'s school profile',
     allowSignUp: true,
@@ -101,13 +97,11 @@ const PORTAL_CONFIGS: Record<UserRole, PortalConfig> = {
     role: 'teacher',
     urlPath: '/teacher/login',
     badgeLabel: 'Teacher Portal',
-    headerTitle: 'Welcome to\nteacher portal',
-    welcomeSubtext: 'Login to access your account',
-    bgGradient: 'from-[#2563EB] via-[#1D4ED8] to-[#1E40AF]',
+    headerTitle: 'Your classroom\nat a glance',
+    welcomeSubtext: 'Plan lessons, record attendance, and support every learner.',
+    bgGradient: 'from-[#64799F] via-[#465D88] to-[#33476E]',
     illustration: TeacherPortalIllustration,
     icon: GraduationCap,
-    defaultEmail: 'teacher.adewale@school.com',
-    defaultPass: 'teacher123',
     signupTitle: 'Teacher Portal Setup',
     signupPrompt: 'Faculty credentials and classroom workstation access',
     allowSignUp: true,
@@ -124,13 +118,11 @@ const PORTAL_CONFIGS: Record<UserRole, PortalConfig> = {
     role: 'super_admin',
     urlPath: '/admin/login',
     badgeLabel: 'Admin Portal',
-    headerTitle: 'Welcome to\nadmin portal',
-    welcomeSubtext: 'Login to access your account',
-    bgGradient: 'from-[#1E1B4B] via-[#2E1065] to-[#4A044E]',
+    headerTitle: 'Lead your school\nwith clarity',
+    welcomeSubtext: 'Manage people, learning, and operations in one secure workspace.',
+    bgGradient: 'from-[#4E496F] via-[#494267] to-[#593F62]',
     illustration: AdminPortalIllustration,
     icon: Shield,
-    defaultEmail: 'admin@school.com',
-    defaultPass: 'admin123',
     signupTitle: 'System Admin Authorization',
     signupPrompt: 'Executive management and administrative control access',
     allowSignUp: false, // Admin accounts cannot casually self-register
@@ -408,6 +400,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
 
   const handleSignUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!activeConfig.allowSignUp || role === 'super_admin') {
+      setActiveTab('login');
+      setError('Admin accounts are provisioned by an authorized administrator.');
+      return;
+    }
     if (!signupStudentId || !signupPassword) {
       setError('Please provide identifier and create a password.');
       return;
@@ -453,24 +450,33 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
   };
 
   return (
-    <div className="w-full min-h-screen lg:h-screen lg:overflow-hidden bg-[#16171b] text-white flex flex-col lg:flex-row selection:bg-[#8B5CF6] selection:text-white">
+    <div className="auth-login w-full min-h-screen lg:h-screen lg:overflow-hidden bg-[#111522] text-white flex flex-col lg:flex-row selection:bg-[#8B5CF6] selection:text-white">
       {/* ========================================================================= */}
-      {/* LEFT PANEL: Dark Theme Form Section (Desktop Left, Mobile Bottom)         */}
+      {/* LEFT PANEL: Account Access (Desktop Left, Mobile First)                   */}
       {/* Independent full-height scrollable container with visible action buttons  */}
       {/* ========================================================================= */}
-      <div className="w-full lg:w-[44%] xl:w-[40%] h-full flex flex-col order-2 lg:order-1 bg-[#16171b] z-10 shrink-0 relative overflow-hidden">
+      <div className="auth-login-panel w-full lg:w-[44%] xl:w-[42%] h-full flex flex-col order-1 lg:order-1 bg-[#f7f6fa] z-10 shrink-0 relative overflow-hidden">
         
         {/* Scrollable Container for Inputs / Form Content */}
         <div
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          className="flex-1 h-full overflow-y-auto custom-scrollbar p-6 sm:p-8 lg:p-10 xl:p-12 flex flex-col justify-start gap-6 min-h-0"
+          className="auth-login-content flex-1 h-full overflow-y-auto custom-scrollbar p-5 sm:p-8 lg:p-10 xl:px-12 xl:py-9 flex flex-col justify-start gap-5 min-h-0"
         >
           {/* Top Form Header Area with animated header text & Portal Switcher */}
-          <div className="shrink-0 space-y-4">
+          <div className="auth-login-header shrink-0 space-y-5 w-full max-w-[440px] self-center">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-violet-100 border border-violet-200 text-violet-700 flex items-center justify-center">
+                <GraduationCap className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-900 truncate">{schoolName || 'School Management'}</p>
+                <p className="text-[11px] text-slate-500">A secure place for your school community</p>
+              </div>
+            </div>
             {/* Mobile & Desktop In-Form Portal Switcher Pills */}
-            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#202228] border border-zinc-800 w-full overflow-x-auto custom-scrollbar">
+            <div className="auth-portal-switcher flex items-center gap-1.5 p-1.5 rounded-2xl bg-white border border-slate-200 w-full overflow-x-auto shadow-sm">
               {(['student', 'parent', 'teacher', 'super_admin'] as UserRole[]).map((r) => {
                 const cfg = PORTAL_CONFIGS[r];
                 const isCurrent = role === r;
@@ -480,9 +486,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                     type="button"
                     onClick={() => {
                       setRole(r);
-                      setIdentifier(cfg.defaultEmail);
-                      setPassword(cfg.defaultPass);
+                      setIdentifier('');
+                      setPassword('');
                       setError(null);
+                      if (!cfg.allowSignUp) setActiveTab('login');
                       if (typeof window !== 'undefined') {
                         window.history.replaceState({}, '', cfg.urlPath);
                       }
@@ -490,7 +497,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                     className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                       isCurrent
                         ? `${cfg.buttonClass} text-white shadow-xs`
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+                        : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
                     <cfg.icon className="w-3.5 h-3.5" />
@@ -509,11 +516,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                     : 'opacity-0 -translate-x-8 pointer-events-none absolute inset-0'
                 }`}
               >
-                <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                  Login
+                <h2 className="text-2xl sm:text-3xl font-bold text-slate-950 tracking-tight">
+                  Welcome back
                 </h2>
-                <p className="text-xs sm:text-sm text-zinc-400 mt-1 font-normal">
-                  Enter your account details or use demo credentials below
+                <p className="text-xs sm:text-sm text-slate-500 mt-1 font-normal">
+                  Sign in to your {activeConfig.badgeLabel.toLowerCase()}
                 </p>
               </div>
 
@@ -525,10 +532,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                     : 'opacity-0 translate-x-8 pointer-events-none absolute inset-0'
                 }`}
               >
-                <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                  Sign Up
+                <h2 className="text-2xl sm:text-3xl font-bold text-slate-950 tracking-tight">
+                  Activate your account
                 </h2>
-                <p className="text-xs sm:text-sm text-zinc-400 mt-1 font-normal">
+                <p className="text-xs sm:text-sm text-slate-500 mt-1 font-normal">
                   {activeConfig.signupPrompt}
                 </p>
               </div>
@@ -547,7 +554,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
           </div>
 
           {/* Sliding Form Container (Slide in & Slide out animation without clipping) */}
-          <div className="w-full overflow-x-hidden py-1">
+          <div className="auth-login-form-area w-full max-w-[440px] self-center overflow-x-hidden py-1">
             <div
               className={`flex w-[200%] transition-transform duration-350 ease-in-out ${
                 activeTab === 'login' ? 'translate-x-0' : '-translate-x-1/2'
@@ -605,24 +612,24 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                   </div>
 
                   {/* Isolated Demo Testing Sandbox (Kept separate from live credentials) */}
-                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                      <div className="flex items-center gap-1.5 font-semibold text-amber-900">
                         <span className="w-2 h-2 rounded-full bg-amber-400 inline-block animate-pulse" />
                         <span>Demo Evaluation Mode</span>
                       </div>
-                      <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-200">
+                      <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800">
                         Isolated
                       </span>
                     </div>
-                    <p className="text-[11px] text-amber-200/80 mt-1 mb-2.5 leading-relaxed">
+                    <p className="text-[11px] text-amber-800 mt-1 mb-2.5 leading-relaxed">
                       Enter evaluation sandbox for {activeConfig.badgeLabel}. Real school accounts and live 2FA are protected.
                     </p>
                     <button
                       type="button"
                       disabled={demoLoading || loading}
                       onClick={() => handleDemoLogin(role)}
-                      className="w-full py-2 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 hover:text-white font-medium text-xs transition-colors border border-amber-500/30 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      className="w-full py-2 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs transition-colors border border-amber-700 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                     >
                       {demoLoading ? 'Starting Demo Session...' : `Launch Demo as ${activeConfig.badgeLabel}`}
                     </button>
@@ -665,7 +672,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                         tabIndex={activeTab === 'login' ? 0 : -1}
                         onClick={handleGoogleSignIn}
                         disabled={googleLoading}
-                        className="w-full py-2.5 px-6 rounded-xl font-medium text-sm text-zinc-300 bg-zinc-900/90 hover:bg-zinc-800 hover:text-white active:scale-[0.99] border border-zinc-800 shadow-xs transition-all duration-150 cursor-pointer disabled:opacity-60 flex items-center justify-center gap-3"
+                        className="w-full py-2.5 px-6 rounded-xl font-medium text-sm text-slate-700 bg-white hover:bg-violet-50 hover:text-slate-900 active:scale-[0.99] border border-slate-200 shadow-xs transition-all duration-150 cursor-pointer disabled:opacity-60 flex items-center justify-center gap-3"
                       >
                         {googleLoading ? (
                           <div className="w-4 h-4 border-2 border-zinc-400/30 border-t-zinc-400 rounded-full animate-spin" />
@@ -706,12 +713,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                 aria-hidden={activeTab !== 'signup'}
               >
                 {signupSuccess ? (
-                  <div className="p-6 rounded-2xl bg-zinc-900 border border-zinc-700 text-zinc-200 text-sm space-y-2 text-center">
-                    <div className="flex items-center justify-center gap-2 font-bold text-white text-base">
+                  <div className="p-6 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm space-y-2 text-center">
+                    <div className="flex items-center justify-center gap-2 font-bold text-emerald-900 text-base">
                       <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                       <span>Account Activated!</span>
                     </div>
-                    <p className="text-xs text-zinc-400">
+                    <p className="text-xs text-emerald-800">
                       Your portal login has been registered. Switching to sign-in view...
                     </p>
                   </div>
@@ -725,7 +732,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                           ? 'Staff / Employee ID'
                           : role === 'parent'
                           ? 'Registered Phone or Parent Email'
-                          : 'Admin Identity Code'}
+                          : 'Registered Phone or Parent Email'}
                       </label>
                       <input
                         type="text"
@@ -811,21 +818,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
             </div>
           </div>
 
-          {/* Bottom Footer: "Don't have an account? [Sign up]" (Disabled for Admin) */}
-          <div className="shrink-0 pt-4 border-t border-zinc-800/80 flex items-center justify-start gap-3 text-xs sm:text-sm text-zinc-400">
+          {/* Account activation is available only to student, parent, and teacher portals. */}
+          <div className="auth-account-footer shrink-0 w-full max-w-[440px] self-center pt-4 border-t border-slate-200 flex items-center justify-start gap-3 text-xs sm:text-sm text-slate-500">
             {activeConfig.allowSignUp ? (
               activeTab === 'login' ? (
                 <>
-                  <span>Don't have an account?</span>
+                  <span>Need to activate an account?</span>
                   <button
                     type="button"
                     onClick={() => {
                       setActiveTab('signup');
                       setError(null);
                     }}
-                    className="px-3 py-1 rounded-lg bg-[#28292e] hover:bg-[#34363d] text-zinc-200 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-xs"
+                    className="px-3 py-1.5 rounded-lg bg-white hover:bg-violet-50 border border-slate-200 text-violet-700 text-xs font-semibold transition-all cursor-pointer shadow-xs"
                   >
-                    Sign up
+                    Activate account
                   </button>
                 </>
               ) : (
@@ -837,29 +844,29 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                       setActiveTab('login');
                       setError(null);
                     }}
-                    className="px-3 py-1 rounded-lg bg-[#28292e] hover:bg-[#34363d] text-zinc-200 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-xs"
+                    className="px-3 py-1.5 rounded-lg bg-white hover:bg-violet-50 border border-slate-200 text-violet-700 text-xs font-semibold transition-all cursor-pointer shadow-xs"
                   >
                     Sign in
                   </button>
                 </>
               )
             ) : (
-              <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
+              <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
                 <Shield className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span>Administrative accounts are provisioned by institution directors only.</span>
+                <span>Admin accounts are appointed by an authorized administrator.</span>
               </div>
             )}
           </div>
 
           {/* Public Student Registration & Admissions Link */}
-          <div className="shrink-0 p-4 rounded-2xl bg-[#1b1c22] border border-purple-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+          <div className="auth-admission-link shrink-0 w-full max-w-[440px] self-center p-4 rounded-2xl bg-white border border-violet-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 border border-purple-500/30">
+              <div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shrink-0 border border-violet-200">
                 <GraduationCap className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="font-bold text-white text-xs sm:text-sm">Prospective Student Admissions</h4>
-                <p className="text-[11px] text-zinc-400">
+                <h4 className="font-bold text-slate-900 text-xs sm:text-sm">Prospective student admissions</h4>
+                <p className="text-[11px] text-slate-500">
                   Apply for admission or track an existing application status
                 </p>
               </div>
@@ -888,7 +895,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
         {/* RIGHT PANEL: FIXED Purple Hero Section (Stays Fixed, Never Scrolls)       */}
         {/* ========================================================================= */}
         <div
-          className={`w-full lg:w-[60%] min-h-[380px] sm:min-h-[440px] lg:min-h-full lg:h-full bg-linear-to-b ${activeConfig.bgGradient} p-6 sm:p-8 lg:p-12 flex flex-col justify-between relative overflow-hidden order-1 lg:order-2 shrink-0 select-none lg:sticky lg:top-0`}
+          className={`auth-login-hero w-full lg:w-[56%] xl:w-[58%] min-h-[320px] sm:min-h-[360px] lg:min-h-full lg:h-full bg-linear-to-br ${activeConfig.bgGradient} p-5 sm:p-8 lg:p-12 flex flex-col justify-between relative overflow-hidden order-2 lg:order-2 shrink-0 select-none lg:sticky lg:top-0`}
         >
           {/* Layered Organic Wave Blobs & Fluid Curves (Matching the screenshot's purple aesthetic) */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -927,28 +934,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                 <span className="font-mono text-[11px]">{activeConfig.urlPath}</span>
               </div>
 
-              {/* Quick portal selector buttons */}
-              <div className="flex items-center gap-1 bg-black/25 backdrop-blur-md p-1 rounded-xl border border-white/15">
-                {(Object.keys(PORTAL_CONFIGS) as UserRole[]).map((r) => {
-                  const isSelected = role === r;
-                  const item = PORTAL_CONFIGS[r];
-                  return (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => switchPortal(r)}
-                      title={`Switch to ${item.badgeLabel}`}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] sm:text-xs font-semibold transition-all cursor-pointer ${
-                        isSelected
-                          ? activeConfig.activeBadgeClass
-                          : 'text-white/80 hover:text-white hover:bg-white/10'
-                      }`}
-                    >
-                      {r === 'super_admin' ? 'Admin' : r.charAt(0).toUpperCase() + r.slice(1)}
-                    </button>
-                  );
-                })}
-              </div>
             </div>
 
             {/* Main Welcome Headline */}
@@ -962,7 +947,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
 
           {/* Centerpiece Vector Illustration (Dynamic for each portal) */}
           <div className="relative z-10 my-auto flex items-center justify-center py-4 lg:py-6">
-            <activeConfig.illustration key={role} className="w-full max-w-[280px] sm:max-w-[360px] lg:max-w-[440px] xl:max-w-[520px] 2xl:max-w-[580px] animate-fadeIn" />
+            <activeConfig.illustration key={role} className="w-full max-w-[210px] sm:max-w-[300px] lg:max-w-[440px] xl:max-w-[520px] 2xl:max-w-[580px] animate-fadeIn" />
           </div>
 
           {/* School Brand footer tag */}

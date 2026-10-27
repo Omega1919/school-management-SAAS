@@ -1,4 +1,4 @@
-import { db, pool } from './index.ts';
+import { db, getCurrentSchoolId, runWithSchoolTransaction } from './index.ts';
 import {
   users,
   teachers,
@@ -22,6 +22,7 @@ import {
   conversations,
   messages,
   schoolSettings,
+  schools,
   auditLogs,
   timetables,
   timetablePeriods,
@@ -36,7 +37,7 @@ import {
   faqs,
 } from './schema.ts';
 import { hashPassword } from '../lib/auth.ts';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 export const DDL_STATEMENTS = `
 DO $$ BEGIN
@@ -640,16 +641,19 @@ const LAGOS_AREAS = [
  * - 30 Teachers across all academic subjects
  * - 350 Parents linked with primary guardian relations
  * - Academic sessions, enrollments, fees, results, homeworks, submissions, messages
+ * Seeded account credentials are predictable demo fixtures for local PGlite only.
+ * Never reuse them for a real school or a deployed customer environment.
  */
-export async function seedInitialData(explicitOptIn = false) {
-  // Production safety: Never allow TRUNCATE or database resets in production without explicit opt-in
-  if (process.env.NODE_ENV === 'production' && !explicitOptIn && process.env.ALLOW_SEED !== 'true') {
-    throw new Error('PRODUCTION SAFETY VIOLATION: Database reseed/reset operations with TRUNCATE are strictly forbidden in production without explicit opt-in.');
+async function seedInitialDataForCurrentSchool(explicitOptIn = false) {
+  // Demo fixtures may only be reset in an embedded database. A local environment
+  // can still point at a shared PostgreSQL database, so NODE_ENV alone is not safe.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Demo seeding is disabled in production.');
   }
-
+  if (!(global as any)._pgliteInstance) {
+    throw new Error('Demo reseeding is disabled for PostgreSQL databases to protect school data.');
+  }
   try {
-    await ensureTablesExist();
-
     // Check baseline institutional settings
     const settings = await db.select().from(schoolSettings).limit(1);
     if (settings.length === 0) {
@@ -670,21 +674,39 @@ export async function seedInitialData(explicitOptIn = false) {
     console.log('🔄 Reconstructing 2-Month Academic Dataset (500 Students, 30 Teachers, 350 Parents, 18 Classes, Everyday Attendance Aug-Sep 2026)...');
 
     // Safe cascading clear: preserve real super_admin users
-    const clearSql = `
-      TRUNCATE TABLE admission_application_logs, admission_applications, timetables, messages, conversations, homework_submissions, homeworks,
-      results, payments, fees, attendance, class_attendance_submissions,
-      student_enrollments, class_subjects, parent_students, parent_invitations,
-      teacher_invitations, students, teachers, parents, classes, departments, subjects,
-      academic_terms, academic_sessions, announcements, audit_logs, password_resets CASCADE;
-      DELETE FROM users WHERE role != 'super_admin';
-    `;
-    if (global._pgliteInstance) {
-      await global._pgliteInstance.exec(clearSql);
-    } else if (typeof (pool as any).exec === 'function') {
-      await (pool as any).exec(clearSql);
-    } else {
-      await pool.query(clearSql);
-    }
+    // RLS limits these deletes to the selected demo school. Never TRUNCATE:
+    // PostgreSQL TRUNCATE bypasses row-level security and would erase every school.
+    await db.transaction(async (tx: any) => {
+      await tx.execute(sql`DELETE FROM admission_application_logs WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM admission_applications WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM timetables WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM messages WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM conversations WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM homework_submissions WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM homeworks WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM results WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM payments WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM fees WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM attendance WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM class_attendance_submissions WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM student_enrollments WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM class_subjects WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM parent_students WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM parent_invitations WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM teacher_invitations WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM students WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM teachers WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM parents WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM classes WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM departments WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM subjects WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM academic_terms WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM academic_sessions WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM announcements WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM audit_logs WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM password_resets WHERE school_id = current_setting('app.school_id')::integer`);
+      await tx.execute(sql`DELETE FROM users WHERE school_id = current_setting('app.school_id')::integer AND role != 'super_admin'`);
+    });
 
     // Pre-hash default passwords for demo personas
     const adminPassHash = await hashPassword('admin123');
@@ -1550,6 +1572,20 @@ export async function seedInitialData(explicitOptIn = false) {
   }
 }
 
+async function withDefaultSchoolContext<T>(operation: () => Promise<T>): Promise<T> {
+  const activeSchoolId = getCurrentSchoolId();
+  if (activeSchoolId) return operation();
+
+  const [school] = await db.select({ id: schools.id }).from(schools)
+    .where(eq(schools.slug, process.env.DEFAULT_SCHOOL_SLUG || 'springfield')).limit(1);
+  if (!school) throw new Error('The default demo school is not present. Run database migrations before seeding.');
+  return runWithSchoolTransaction(school.id, operation);
+}
+
+export async function seedInitialData(explicitOptIn = false): Promise<void> {
+  return withDefaultSchoolContext(() => seedInitialDataForCurrentSchool(explicitOptIn));
+}
+
 /**
  * Automatically ensures baseline dummy accounts exist and are ready for login:
  * - Teacher: teacher.adewale@school.com / teacher123 (ID: TCH-2026-001)
@@ -1557,7 +1593,7 @@ export async function seedInitialData(explicitOptIn = false) {
  * - Student: student.chinedu@school.com / student123 (ID: STU-2026-0001)
  * If demo accounts or records are missing, seeds the complete academic dataset.
  */
-export async function ensureDefaultDemoData(): Promise<void> {
+async function ensureDemoDataForCurrentSchool(): Promise<void> {
   const allowDemo = process.env.ENABLE_DEMO_LOGINS === 'true' || process.env.DEMO_MODE === 'true' || process.env.SEED_DEMO_DATA === 'true' || process.env.ALLOW_DEMO === 'true' || process.env.NODE_ENV !== 'production';
   // Production safety: Automatic demo data and user seeding only runs in dev or with explicit demo flags
   if (!allowDemo) {
@@ -1566,8 +1602,6 @@ export async function ensureDefaultDemoData(): Promise<void> {
   }
 
   try {
-    await ensureTablesExist();
-
     // 1. Ensure Demo Super Admin account (admin@school.com / admin123)
     const demoAdminEmail = 'admin@school.com';
     const demoAdminPassHash = await hashPassword('admin123');
@@ -1658,6 +1692,10 @@ export async function ensureDefaultDemoData(): Promise<void> {
     const pc = Number(parentCountRes[0]?.count || 0);
 
     if (!teacherUser || !parentUser || !studentUser || tc < 30 || sc < 100 || pc < 50) {
+      if (process.env.NODE_ENV === 'production') {
+        console.warn('Demo records are incomplete; automatic production reseeding was skipped to protect existing school data.');
+        return;
+      }
       console.log('🔄 Initializing standard academic dataset (30 teachers, 500 students, 350 parents)...');
       await seedInitialData(true);
     } else {
@@ -1689,6 +1727,147 @@ export async function ensureDefaultDemoData(): Promise<void> {
   } catch (err: any) {
     console.error('Failed to ensure default demo data:', err);
   }
+}
+
+export async function ensureDefaultDemoData(): Promise<void> {
+  return withDefaultSchoolContext(() => ensureDemoDataForCurrentSchool());
+}
+
+/**
+ * Local PGlite demo only: gives developers a second tenant with its own copy
+ * of demo accounts and academic records for checking school separation.
+ */
+export async function ensureSecondaryDemoSchoolData(): Promise<void> {
+  if (process.env.NODE_ENV === 'production' || !(global as any)._pgliteInstance) return;
+
+  let [school] = await db.select({ id: schools.id }).from(schools).where(eq(schools.slug, 'lakeside-demo')).limit(1);
+  if (!school) {
+    [school] = await db.insert(schools).values({
+      name: 'Lakeside Demo Academy',
+      slug: 'lakeside-demo',
+      status: 'active',
+    }).returning({ id: schools.id });
+  }
+
+  await runWithSchoolTransaction(school.id, async () => {
+    const [settings] = await db.select({ id: schoolSettings.id }).from(schoolSettings).limit(1);
+    if (!settings) {
+      await db.insert(schoolSettings).values({
+        schoolName: 'Lakeside Demo Academy',
+        motto: 'Learning Together, Growing Together',
+        currencySymbol: '₦',
+      });
+    }
+
+    const demoUsers = [
+      { uid: 'admin-demo-superadmin', email: 'admin@school.com', name: 'Demo Super Administrator', role: 'super_admin', password: 'admin123' },
+      { uid: 'teacher-demo-lakeside', email: 'teacher.adewale@school.com', name: 'Adewale Demo Teacher', role: 'teacher', password: 'teacher123' },
+      { uid: 'student-demo-lakeside', email: 'student.chinedu@school.com', name: 'Chinedu Demo Student', role: 'student', password: 'student123' },
+      { uid: 'parent-demo-lakeside', email: 'parent.ibrahim@school.com', name: 'Ibrahim Demo Parent', role: 'parent', password: 'parent123' },
+    ];
+    const demoUserIds: Record<string, number> = {};
+    for (const demoUser of demoUsers) {
+      const passwordHash = await hashPassword(demoUser.password);
+      let [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, demoUser.email)).limit(1);
+      if (!user) {
+        [user] = await db.insert(users).values({
+          uid: demoUser.uid,
+          email: demoUser.email,
+          fullName: demoUser.name,
+          role: demoUser.role,
+          passwordHash,
+          status: 'active',
+          isDemo: true,
+        }).returning({ id: users.id });
+      } else {
+        await db.update(users).set({ passwordHash, status: 'active', isDemo: true }).where(eq(users.id, user.id));
+      }
+      demoUserIds[demoUser.role] = user.id;
+    }
+
+    let [session] = await db.select({ id: academicSessions.id }).from(academicSessions)
+      .where(eq(academicSessions.name, '2026/2027')).limit(1);
+    if (!session) {
+      [session] = await db.insert(academicSessions).values({
+        name: '2026/2027', startDate: '2026-09-01', endDate: '2027-06-30', isCurrent: true,
+      }).returning({ id: academicSessions.id });
+    }
+
+    let [teacher] = await db.select({ id: teachers.id }).from(teachers)
+      .where(eq(teachers.userId, demoUserIds.teacher)).limit(1);
+    if (!teacher) {
+      [teacher] = await db.insert(teachers).values({
+        userId: demoUserIds.teacher,
+        employeeId: 'TCH-2026-001',
+        specialization: 'Mathematics',
+        qualification: 'Bachelor of Education',
+      }).returning({ id: teachers.id });
+    }
+
+    let [classroom] = await db.select({ id: classes.id }).from(classes)
+      .where(eq(classes.name, 'Lakeside Primary 5')).limit(1);
+    if (!classroom) {
+      [classroom] = await db.insert(classes).values({
+        name: 'Lakeside Primary 5',
+        gradeLevel: 'Primary 5',
+        sessionId: session.id,
+        classTeacherId: teacher.id,
+      }).returning({ id: classes.id });
+    }
+
+    let [student] = await db.select({ id: students.id }).from(students)
+      .where(eq(students.studentId, 'STU-2026-001')).limit(1);
+    if (!student) {
+      [student] = await db.insert(students).values({
+        userId: demoUserIds.student,
+        studentId: 'STU-2026-001',
+        firstName: 'Chinedu',
+        lastName: 'Demo Student',
+        gender: 'Male',
+        classId: classroom.id,
+        currentSessionId: session.id,
+        admissionDate: '2026-09-01',
+      }).returning({ id: students.id });
+    }
+
+    let [enrollment] = await db.select({ id: studentEnrollments.id }).from(studentEnrollments)
+      .where(and(
+        eq(studentEnrollments.studentId, student.id),
+        eq(studentEnrollments.classId, classroom.id),
+        eq(studentEnrollments.sessionId, session.id),
+      )).limit(1);
+    if (!enrollment) {
+      await db.insert(studentEnrollments).values({
+        studentId: student.id,
+        classId: classroom.id,
+        sessionId: session.id,
+        enrollmentDate: '2026-09-01',
+      });
+    }
+
+    let [parent] = await db.select({ id: parents.id }).from(parents)
+      .where(eq(parents.userId, demoUserIds.parent)).limit(1);
+    if (!parent) {
+      [parent] = await db.insert(parents).values({
+        userId: demoUserIds.parent,
+        parentId: 'PAR-2026-0001',
+      }).returning({ id: parents.id });
+    }
+
+    const [parentLink] = await db.select({ id: parentStudents.id }).from(parentStudents)
+      .where(and(eq(parentStudents.parentUserId, demoUserIds.parent), eq(parentStudents.studentId, student.id))).limit(1);
+    if (!parentLink) {
+      await db.insert(parentStudents).values({
+        parentUserId: demoUserIds.parent,
+        studentId: student.id,
+        relationship: 'Parent',
+        isPrimary: true,
+      });
+    }
+
+    const [portalSettings] = await db.select({ id: publicPortalSettings.id }).from(publicPortalSettings).limit(1);
+    if (!portalSettings) await db.insert(publicPortalSettings).values({});
+  });
 }
 
 /**

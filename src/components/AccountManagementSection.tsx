@@ -720,17 +720,18 @@ export const AccountManagementSection: React.FC = () => {
           aria-modal="true"
         >
           <div
-            className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-6 space-y-4 animate-in zoom-in-95 duration-150 text-slate-800 my-auto"
+            className="bg-white rounded-3xl shadow-2xl shadow-slate-950/20 border border-slate-200 max-w-lg w-full p-6 sm:p-7 space-y-4 animate-in zoom-in-95 duration-150 text-slate-800 my-auto relative overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-purple-500 via-violet-400 to-indigo-400" />
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600">
                   <Lock className="w-4.5 h-4.5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Change Account Password</h3>
-                  <p className="text-[11px] text-slate-500">Requires single-use email verification code</p>
+                  <h3 className="text-base font-bold text-slate-900">Change account password</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Verify your identity with a one-time email code</p>
                 </div>
               </div>
               <button
