@@ -62,12 +62,16 @@ export const users = pgTable('users', {
   role: text('role').notNull(), // 'super_admin' | 'teacher' | 'parent' | 'student'
   status: text('status').notNull().default('active'), // 'active' | 'suspended' | 'pending'
   phone: text('phone'),
+  tokenVersion: integer('token_version').default(1).notNull(),
+  isDemo: boolean('is_demo').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => [
   index('users_email_idx').on(t.email),
   index('users_role_idx').on(t.role),
   index('users_status_idx').on(t.status),
+  index('users_token_version_idx').on(t.tokenVersion),
+  index('users_is_demo_idx').on(t.isDemo),
 ]);
 
 // ============================================================================
@@ -471,6 +475,38 @@ export const adminVerificationSessions = pgTable('admin_verification_sessions', 
 }, (t) => [
   index('admin_verif_token_idx').on(t.verifyToken),
   index('admin_verif_user_idx').on(t.userId),
+]);
+
+export const authVerificationChallenges = pgTable('auth_verification_challenges', {
+  id: serial('id').primaryKey(),
+  challengeToken: text('challenge_token').notNull().unique(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  codeHash: text('code_hash').notNull(),
+  attemptsRemaining: integer('attempts_remaining').default(5).notNull(),
+  resendCount: integer('resend_count').default(0).notNull(),
+  lastResendAt: timestamp('last_resend_at').defaultNow().notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  isConsumed: boolean('is_consumed').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  index('auth_challenges_token_idx').on(t.challengeToken),
+  index('auth_challenges_user_idx').on(t.userId),
+]);
+
+export const userSessions = pgTable('user_sessions', {
+  id: serial('id').primaryKey(),
+  sessionId: text('session_id').notNull().unique(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  tokenHash: text('token_hash').notNull(),
+  ipAddress: text('ip_address'),
+  userAgent: text('user_agent'),
+  isValid: boolean('is_valid').default(true).notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [
+  index('user_sessions_id_idx').on(t.sessionId),
+  index('user_sessions_user_idx').on(t.userId),
 ]);
 
 // ============================================================================

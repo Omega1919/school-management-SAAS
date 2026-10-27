@@ -1,22 +1,11 @@
-import { db, pool } from './src/db/index.ts';
-import { runMigrations } from './src/db/migrations.ts';
-import { ensureDefaultDemoData } from './src/db/seed.ts';
-import {
-  users,
-  academicSessions,
-  classes,
-  departments,
-  admissionApplications,
-  admissionApplicationLogs,
-  students,
-  studentEnrollments,
-} from './src/db/schema.ts';
+import path from 'path';
+import os from 'os';
+
+process.env.PGLITE_DATA_DIR = path.join(os.tmpdir(), `sms_admissions_test_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
+delete process.env.DATABASE_URL;
+
 import { generateToken, hashPassword } from './src/lib/auth.ts';
-import { admissionsRouter } from './src/routes/admissions.ts';
-import { academicRouter } from './src/routes/academic.ts';
-import { classesRouter } from './src/routes/classes.ts';
 import express from 'express';
-import { authenticate } from './src/middleware/auth.ts';
 import { createRateLimiter } from './src/middleware/rate-limiter.ts';
 import { eq, and, count } from 'drizzle-orm';
 
@@ -30,6 +19,25 @@ async function runAdmissionsRegressionTests() {
   console.log('===============================================================');
   console.log('STARTING PUBLIC STUDENT REGISTRATION & ADMISSIONS REGRESSION SUITE');
   console.log('===============================================================\n');
+
+  // Dynamically import database and routes modules
+  const { db, pool } = await import('./src/db/index.ts');
+  const { runMigrations } = await import('./src/db/migrations.ts');
+  const { ensureDefaultDemoData } = await import('./src/db/seed.ts');
+  const {
+    users,
+    academicSessions,
+    classes,
+    departments,
+    admissionApplications,
+    admissionApplicationLogs,
+    students,
+    studentEnrollments,
+  } = await import('./src/db/schema.ts');
+  const { admissionsRouter } = await import('./src/routes/admissions.ts');
+  const { academicRouter } = await import('./src/routes/academic.ts');
+  const { classesRouter } = await import('./src/routes/classes.ts');
+  const { authenticate } = await import('./src/middleware/auth.ts');
 
   // Setup Express test harness
   const app = express();

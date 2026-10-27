@@ -10,6 +10,8 @@ import {
   teacherInvitations,
   passwordResets,
   adminVerificationSessions,
+  authVerificationChallenges,
+  userSessions,
 } from '../db/schema.ts';
 import {
   comparePassword,
@@ -31,7 +33,17 @@ import {
   registrationLimiter,
   tokenValidationLimiter,
 } from '../middleware/rate-limiter.ts';
-import { eq, and, gt, or } from 'drizzle-orm';
+import {
+  sendLoginVerificationEmail,
+  sendNewLoginAlertEmail,
+  sendPasswordResetEmail,
+  sendPasswordChangedAlertEmail,
+  sendPasswordChangeOtpEmail,
+  sendEmailChangedAlertEmail,
+  sendEmailChangeOtpEmail,
+  getAppUrl,
+} from '../lib/email.ts';
+import { eq, and, gt, or, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 
 export const authRouter = Router();
@@ -55,6 +67,389 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000).unref();
+
+/**
+ * Issues a cryptographically secure, single-use 6-digit email verification challenge.
+ * Stores only the SHA-256 hash in the database.
+ * Dispatches via real server-side email service.
+ */
+async function issueVerificationChallenge(
+  user: { id: number; email: string; fullName: string; role?: string },
+  clientIp?: string
+): Promise<{ verifyToken: string; email: string; message: string }> {
+  const challengeToken = crypto.randomUUID();
+  const verificationCode = crypto.randomInt(100000, 1000000).toString();
+  const codeHash = hashToken(verificationCode);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  // Clean up any existing unconsumed challenges for this user
+  await db
+    .delete(authVerificationChallenges)
+    .where(eq(authVerificationChallenges.userId, user.id));
+
+  await db
+    .delete(adminVerificationSessions)
+    .where(eq(adminVerificationSessions.userId, user.id));
+
+  // Persist into auth_verification_challenges
+  await db.insert(authVerificationChallenges).values({
+    challengeToken,
+    userId: user.id,
+    codeHash,
+    attemptsRemaining: 5,
+    resendCount: 0,
+    lastResendAt: new Date(),
+    expiresAt,
+    isConsumed: false,
+  });
+
+  // Mirror into adminVerificationSessions for backwards compatibility
+  await db.insert(adminVerificationSessions).values({
+    verifyToken: challengeToken,
+    userId: user.id,
+    codeHash,
+    attemptsRemaining: 5,
+    resendCount: 0,
+    lastResendAt: new Date(),
+    expiresAt,
+  });
+
+  // Retain in simulated mailbox strictly for local demo inspection if non-production
+  if (process.env.NODE_ENV !== 'production') {
+    simulatedDemoMailbox.set(challengeToken, {
+      recipient: user.email,
+      subject: 'School Management Security Verification Code',
+      verifyToken: challengeToken,
+      code: verificationCode,
+      dispatchedAt: Date.now(),
+    });
+  }
+
+  // Dispatch real security email
+  try {
+    await sendLoginVerificationEmail({
+      to: user.email,
+      name: user.fullName,
+      code: verificationCode,
+      expiresInMinutes: 10,
+    });
+  } catch (emailErr: any) {
+    // If real email dispatch fails, do not silently bypass verification!
+    // Clean up challenge and fail safely
+    await db.delete(authVerificationChallenges).where(eq(authVerificationChallenges.challengeToken, challengeToken));
+    await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.verifyToken, challengeToken));
+    simulatedDemoMailbox.delete(challengeToken);
+    throw new Error('Failed to dispatch verification email. Please verify outbound email configuration or try again.');
+  }
+
+  await logAuditEvent({
+    userId: user.id,
+    userEmail: user.email,
+    role: user.role,
+    action: 'MFA_CHALLENGE_ISSUED',
+    resource: 'auth',
+    details: `Two-factor verification challenge dispatched to ${user.email}`,
+    ipAddress: clientIp,
+  });
+
+  return {
+    verifyToken: challengeToken,
+    email: user.email,
+    message: `A single-use 6-digit confirmation code has been dispatched to ${user.email}. Please enter the code to confirm access.`,
+  };
+}
+
+/**
+ * Verifies a single-use 6-digit verification code.
+ * Enforces:
+ * - 10-minute expiry
+ * - Single-use atomic consumption
+ * - Maximum 5 failed attempts per challenge
+ * - Invalidates challenge when attempts are exhausted
+ */
+async function verifyChallengeCode(
+  verifyToken: string,
+  code: string,
+  clientIp?: string,
+  userAgent?: string
+): Promise<{ user?: any; token?: string; error?: string; status?: number }> {
+  const cleanToken = (verifyToken || '').trim();
+  const cleanCode = (code || '').trim();
+
+  if (!cleanToken || !cleanCode) {
+    return { error: 'Verification session and 6-digit code are required.', status: 400 };
+  }
+
+  // 1. Look up challenge from authVerificationChallenges
+  let challenge = (await db
+    .select()
+    .from(authVerificationChallenges)
+    .where(and(eq(authVerificationChallenges.challengeToken, cleanToken), eq(authVerificationChallenges.isConsumed, false)))
+    .limit(1))[0];
+
+  // Fallback to adminVerificationSessions if necessary
+  if (!challenge) {
+    const adminSession = (await db
+      .select()
+      .from(adminVerificationSessions)
+      .where(eq(adminVerificationSessions.verifyToken, cleanToken))
+      .limit(1))[0];
+
+    if (adminSession) {
+      challenge = {
+        id: adminSession.id,
+        challengeToken: adminSession.verifyToken,
+        userId: adminSession.userId,
+        codeHash: adminSession.codeHash,
+        attemptsRemaining: adminSession.attemptsRemaining,
+        resendCount: adminSession.resendCount,
+        lastResendAt: adminSession.lastResendAt,
+        expiresAt: adminSession.expiresAt,
+        isConsumed: false,
+        createdAt: adminSession.createdAt,
+      } as any;
+    }
+  }
+
+  if (!challenge) {
+    return { error: 'Verification session has expired or is invalid. Please sign in again.', status: 400 };
+  }
+
+  // Check expiration
+  if (new Date() > new Date(challenge.expiresAt)) {
+    await db.delete(authVerificationChallenges).where(eq(authVerificationChallenges.challengeToken, cleanToken));
+    await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.verifyToken, cleanToken));
+    simulatedDemoMailbox.delete(cleanToken);
+    return { error: 'Verification code has expired. Please sign in again to receive a fresh code.', status: 400 };
+  }
+
+  // Check attempts remaining
+  if (challenge.attemptsRemaining <= 0) {
+    await db.delete(authVerificationChallenges).where(eq(authVerificationChallenges.challengeToken, cleanToken));
+    await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.verifyToken, cleanToken));
+    simulatedDemoMailbox.delete(cleanToken);
+    return { error: 'Maximum verification attempts exceeded. Verification challenge terminated. Please sign in again.', status: 400 };
+  }
+
+  const hashedInput = hashToken(cleanCode);
+  if (hashedInput !== challenge.codeHash) {
+    const remaining = challenge.attemptsRemaining - 1;
+    if (remaining <= 0) {
+      await db.delete(authVerificationChallenges).where(eq(authVerificationChallenges.challengeToken, cleanToken));
+      await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.verifyToken, cleanToken));
+      simulatedDemoMailbox.delete(cleanToken);
+      return {
+        error: 'Invalid verification code. Maximum attempts exceeded. Verification challenge terminated.',
+        status: 400,
+      };
+    }
+
+    await db
+      .update(authVerificationChallenges)
+      .set({ attemptsRemaining: remaining })
+      .where(eq(authVerificationChallenges.challengeToken, cleanToken));
+
+    await db
+      .update(adminVerificationSessions)
+      .set({ attemptsRemaining: remaining })
+      .where(eq(adminVerificationSessions.verifyToken, cleanToken));
+
+    return { error: `Invalid verification code. ${remaining} attempt(s) remaining.`, status: 400 };
+  }
+
+  // Single-use: atomically mark challenge as consumed and remove session
+  await db
+    .update(authVerificationChallenges)
+    .set({ isConsumed: true })
+    .where(eq(authVerificationChallenges.challengeToken, cleanToken));
+  await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.verifyToken, cleanToken));
+  simulatedDemoMailbox.delete(cleanToken);
+
+  // Fetch fresh user record
+  const [dbUser] = await db.select().from(users).where(eq(users.id, challenge.userId)).limit(1);
+
+  if (!dbUser || dbUser.status === 'suspended') {
+    return { error: 'Account suspended or no longer exists.', status: 403 };
+  }
+
+  const token = generateToken({
+    id: dbUser.id,
+    uid: dbUser.uid,
+    email: dbUser.email,
+    role: dbUser.role as any,
+    fullName: dbUser.fullName,
+    tokenVersion: dbUser.tokenVersion,
+    isDemo: dbUser.isDemo,
+  });
+
+  // Track session in userSessions
+  try {
+    await db.insert(userSessions).values({
+      sessionId: crypto.randomUUID(),
+      userId: dbUser.id,
+      tokenHash: hashToken(token),
+      ipAddress: clientIp || null,
+      userAgent: userAgent || null,
+      isValid: true,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+  } catch (sErr) {
+    // Non-fatal
+  }
+
+  await logAuditEvent({
+    userId: dbUser.id,
+    userEmail: dbUser.email,
+    role: dbUser.role,
+    action: 'MFA_VERIFIED_LOGIN_SUCCESS',
+    resource: 'auth',
+    details: `User ${dbUser.email} confirmed 2FA code successfully`,
+    ipAddress: clientIp,
+  });
+
+  // Send new login alert email
+  sendNewLoginAlertEmail({
+    to: dbUser.email,
+    name: dbUser.fullName,
+    ipAddress: clientIp,
+    userAgent,
+    loginTime: new Date().toUTCString(),
+  }).catch(() => {});
+
+  return {
+    token,
+    user: {
+      id: dbUser.id,
+      email: dbUser.email,
+      fullName: dbUser.fullName,
+      role: dbUser.role,
+      status: dbUser.status,
+    },
+  };
+}
+
+/**
+ * Resends a fresh 6-digit confirmation code with:
+ * - 30-second cooldown enforcement
+ * - Maximum 3 resends per challenge
+ */
+async function resendChallengeCode(
+  verifyToken: string,
+  clientIp?: string
+): Promise<{ success?: boolean; message?: string; error?: string; status?: number }> {
+  const cleanToken = (verifyToken || '').trim();
+  if (!cleanToken) {
+    return { error: 'Verification session is required.', status: 400 };
+  }
+
+  let challenge = (await db
+    .select()
+    .from(authVerificationChallenges)
+    .where(and(eq(authVerificationChallenges.challengeToken, cleanToken), eq(authVerificationChallenges.isConsumed, false)))
+    .limit(1))[0];
+
+  if (!challenge) {
+    const adminSession = (await db
+      .select()
+      .from(adminVerificationSessions)
+      .where(eq(adminVerificationSessions.verifyToken, cleanToken))
+      .limit(1))[0];
+
+    if (adminSession) {
+      challenge = {
+        id: adminSession.id,
+        challengeToken: adminSession.verifyToken,
+        userId: adminSession.userId,
+        codeHash: adminSession.codeHash,
+        attemptsRemaining: adminSession.attemptsRemaining,
+        resendCount: adminSession.resendCount,
+        lastResendAt: adminSession.lastResendAt,
+        expiresAt: adminSession.expiresAt,
+        isConsumed: false,
+        createdAt: adminSession.createdAt,
+      } as any;
+    }
+  }
+
+  if (!challenge) {
+    return { error: 'Verification session has expired. Please sign in again.', status: 400 };
+  }
+
+  if (challenge.resendCount >= 3) {
+    return { error: 'Maximum code resend limit reached for this session (3/3). Please sign in again.', status: 400 };
+  }
+
+  const lastResendMillis = challenge.lastResendAt ? new Date(challenge.lastResendAt).getTime() : 0;
+  const cooldownElapsed = Date.now() - lastResendMillis;
+  if (cooldownElapsed < 30 * 1000) {
+    const waitSeconds = Math.ceil((30 * 1000 - cooldownElapsed) / 1000);
+    return {
+      error: `Please wait ${waitSeconds} second(s) before requesting another verification code.`,
+      status: 429,
+    };
+  }
+
+  const newCode = crypto.randomInt(100000, 1000000).toString();
+  const newCodeHash = hashToken(newCode);
+  const newExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await db
+    .update(authVerificationChallenges)
+    .set({
+      codeHash: newCodeHash,
+      attemptsRemaining: 5,
+      resendCount: challenge.resendCount + 1,
+      lastResendAt: new Date(),
+      expiresAt: newExpiresAt,
+    })
+    .where(eq(authVerificationChallenges.challengeToken, cleanToken));
+
+  await db
+    .update(adminVerificationSessions)
+    .set({
+      codeHash: newCodeHash,
+      attemptsRemaining: 5,
+      resendCount: challenge.resendCount + 1,
+      lastResendAt: new Date(),
+      expiresAt: newExpiresAt,
+    })
+    .where(eq(adminVerificationSessions.verifyToken, cleanToken));
+
+  if (process.env.NODE_ENV !== 'production') {
+    const existingSim = simulatedDemoMailbox.get(cleanToken);
+    if (existingSim) {
+      existingSim.code = newCode;
+      existingSim.dispatchedAt = Date.now();
+    }
+  }
+
+  const [user] = await db.select().from(users).where(eq(users.id, challenge.userId)).limit(1);
+  if (!user) {
+    return { error: 'User record not found.', status: 404 };
+  }
+
+  await sendLoginVerificationEmail({
+    to: user.email,
+    name: user.fullName,
+    code: newCode,
+    expiresInMinutes: 10,
+  });
+
+  await logAuditEvent({
+    userId: challenge.userId,
+    userEmail: user.email,
+    role: user.role,
+    action: 'MFA_CODE_RESENT',
+    resource: 'auth',
+    details: `Fresh verification code dispatched to ${user.email}`,
+    ipAddress: clientIp,
+  });
+
+  return {
+    success: true,
+    message: `A fresh 6-digit confirmation code has been dispatched to ${user.email}.`,
+  };
+}
 
 // Google Sign-in / SSO verification
 authRouter.post('/google', async (req: AuthRequest, res: Response) => {
@@ -181,33 +576,23 @@ authRouter.post('/google', async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ error: 'This account has been suspended. Please contact the administrator.' });
     }
 
-    const token = generateToken({
-      id: dbUser.id,
-      uid: dbUser.uid,
-      email: dbUser.email,
-      role: dbUser.role as any,
-      fullName: dbUser.fullName,
-    });
+    const challenge = await issueVerificationChallenge(dbUser, req.ip);
 
     await logAuditEvent({
       userId: dbUser.id,
       userEmail: dbUser.email,
       role: dbUser.role,
-      action: 'USER_LOGIN',
+      action: 'GOOGLE_LOGIN_MFA_CHALLENGE',
       resource: 'auth',
       details: { method: 'Google SSO' },
       ipAddress: req.ip,
     });
 
     return res.json({
-      token,
-      user: {
-        id: dbUser.id,
-        email: dbUser.email,
-        fullName: dbUser.fullName,
-        role: dbUser.role,
-        status: dbUser.status,
-      },
+      requiresVerification: true,
+      verifyToken: challenge.verifyToken,
+      email: challenge.email,
+      message: challenge.message,
     });
   } catch (error: any) {
     console.error('Google login error:', error);
@@ -434,94 +819,25 @@ authRouter.post('/login', loginLimiter, async (req: AuthRequest, res: Response) 
       });
     }
 
-    // Super Admin Two-Factor Email Verification Code Step (Database-Backed & Secure)
-    // 2FA is removed for demo logins so reviewers, testers, and demo administrators can sign in directly
-    const isDemoLogin =
-      isDemoAlias ||
-      isDemoEmail ||
-      user.email === 'admin@school.com' ||
-      req.body.isDemo === true ||
-      req.body.demoLogin === true;
-
-    if (user.role === 'super_admin' && !isDemoLogin) {
-      const verifyToken = crypto.randomUUID();
-      // Cryptographically secure 6-digit numeric OTP
-      const verificationCode = crypto.randomInt(100000, 1000000).toString();
-      const codeHash = hashToken(verificationCode);
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-      // Atomically clean up any previous verification sessions for this admin user
-      await db
-        .delete(adminVerificationSessions)
-        .where(eq(adminVerificationSessions.userId, user.id));
-
-      // Persist verification session into database with attempt and resend bounds
-      await db.insert(adminVerificationSessions).values({
-        verifyToken,
-        userId: user.id,
-        codeHash,
-        attemptsRemaining: 5,
-        resendCount: 0,
-        lastResendAt: new Date(),
-        expiresAt,
-      });
-
-      // Retain in bounded simulated mailbox solely for local demo inspection if non-production
-      if (process.env.NODE_ENV !== 'production') {
-        simulatedDemoMailbox.set(verifyToken, {
-          recipient: user.email,
-          subject: 'Your Greenwood Academy Administrative Security Code',
-          verifyToken,
-          code: verificationCode,
-          dispatchedAt: Date.now(),
-        });
-      }
-
-      await logAuditEvent({
-        userId: user.id,
-        userEmail: user.email,
-        role: user.role,
-        action: 'ADMIN_VERIFICATION_CODE_ISSUED',
-        resource: 'auth',
-        details: `Two-factor email confirmation code dispatched to ${user.email}`,
-        ipAddress: req.ip,
-      });
-
-      // Sanitized response: devCode and raw codes are strictly omitted
-      return res.json({
-        requiresVerification: true,
-        verifyToken,
-        email: user.email,
-        message: `A 6-digit confirmation code has been dispatched to ${user.email}. Please enter the code to confirm your administrative access.`,
-      });
-    }
-
-    const token = generateToken({
-      id: user.id,
-      uid: user.uid,
-      email: user.email,
-      role: user.role as any,
-      fullName: user.fullName,
-    });
+    // Live authentication ALWAYS enforces server-side single-use 2FA verification.
+    // Client-supplied flags (isDemo, demoLogin, role) never bypass live MFA.
+    const challenge = await issueVerificationChallenge(user, req.ip);
 
     await logAuditEvent({
       userId: user.id,
       userEmail: user.email,
       role: user.role,
-      action: 'USER_LOGIN',
+      action: 'LOGIN_MFA_CHALLENGE_ISSUED',
       resource: 'auth',
+      details: `Two-factor verification challenge dispatched to ${user.email}`,
       ipAddress: req.ip,
     });
 
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        status: user.status,
-      },
+    return res.json({
+      requiresVerification: true,
+      verifyToken: challenge.verifyToken,
+      email: challenge.email,
+      message: challenge.message,
     });
   } catch (error: any) {
     console.error('Login error:', error);
@@ -529,193 +845,175 @@ authRouter.post('/login', loginLimiter, async (req: AuthRequest, res: Response) 
   }
 });
 
-// 1b. Verify 6-digit Admin Email Confirmation Code (Rate Limited, Hashed, Attempt Guarded)
+// 1b. Verify 6-digit Email Confirmation Code (Unified MFA, Rate Limited, Hashed, Single-Use)
+authRouter.post('/verify-2fa', tokenValidationLimiter, async (req: AuthRequest, res: Response) => {
+  try {
+    const { verifyToken, code } = req.body;
+    const result = await verifyChallengeCode(verifyToken, code, req.ip, req.headers['user-agent']);
+    if (result.error) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    return res.json({ token: result.token, user: result.user });
+  } catch (err: any) {
+    console.error('Verify 2FA error:', err);
+    return res.status(500).json({ error: 'Failed to verify confirmation code.' });
+  }
+});
+
+// Backwards-compatible alias for admin verification
 authRouter.post('/verify-admin-code', tokenValidationLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { verifyToken, code } = req.body;
-    if (!verifyToken || !code) {
-      return res.status(400).json({ error: 'Verification session and 6-digit code are required.' });
+    const result = await verifyChallengeCode(verifyToken, code, req.ip, req.headers['user-agent']);
+    if (result.error) {
+      return res.status(result.status || 400).json({ error: result.error });
     }
+    return res.json({ token: result.token, user: result.user });
+  } catch (err: any) {
+    console.error('Verify admin code error:', err);
+    return res.status(500).json({ error: 'Failed to verify confirmation code.' });
+  }
+});
 
-    const cleanToken = (verifyToken || '').trim();
-    const cleanCode = (code || '').trim();
-
-    const [session] = await db
-      .select()
-      .from(adminVerificationSessions)
-      .where(eq(adminVerificationSessions.verifyToken, cleanToken))
-      .limit(1);
-
-    if (!session) {
-      return res.status(400).json({ error: 'Verification session has expired or is invalid. Please sign in again.' });
+// 1c. Resend 6-digit Email Confirmation Code (Rate Limited, 30s Cooldown, Max 3 Resends)
+authRouter.post('/resend-2fa', tokenValidationLimiter, async (req: AuthRequest, res: Response) => {
+  try {
+    const { verifyToken } = req.body;
+    const result = await resendChallengeCode(verifyToken, req.ip);
+    if (result.error) {
+      return res.status(result.status || 400).json({ error: result.error });
     }
+    return res.json({ success: true, message: result.message });
+  } catch (err: any) {
+    console.error('Resend 2FA error:', err);
+    return res.status(500).json({ error: 'Failed to resend confirmation code.' });
+  }
+});
 
-    // Check expiry
-    if (new Date() > new Date(session.expiresAt)) {
-      await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.id, session.id));
-      simulatedDemoMailbox.delete(cleanToken);
-      return res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
+// Backwards-compatible alias for resend admin code
+authRouter.post('/resend-admin-code', tokenValidationLimiter, async (req: AuthRequest, res: Response) => {
+  try {
+    const { verifyToken } = req.body;
+    const result = await resendChallengeCode(verifyToken, req.ip);
+    if (result.error) {
+      return res.status(result.status || 400).json({ error: result.error });
     }
+    return res.json({ success: true, message: result.message });
+  } catch (err: any) {
+    console.error('Resend admin code error:', err);
+    return res.status(500).json({ error: 'Failed to resend confirmation code.' });
+  }
+});
 
-    // Check attempts remaining
-    if (session.attemptsRemaining <= 0) {
-      await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.id, session.id));
-      simulatedDemoMailbox.delete(cleanToken);
-      return res.status(400).json({ error: 'Maximum verification attempts exceeded. Please sign in again.' });
-    }
+// 1d. Dedicated Server-Enforced Demo Authentication (Explicitly Isolated from Live Authentication)
+authRouter.post('/demo-login', loginLimiter, async (req: AuthRequest, res: Response) => {
+  try {
+    const isProd = process.env.NODE_ENV === 'production';
+    const allowDemo = process.env.ENABLE_DEMO_LOGINS === 'true' || (!isProd && process.env.ALLOW_DEMO !== 'false');
 
-    const hashedInput = hashToken(cleanCode);
-    if (hashedInput !== session.codeHash) {
-      const remaining = session.attemptsRemaining - 1;
-      if (remaining <= 0) {
-        await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.id, session.id));
-        simulatedDemoMailbox.delete(cleanToken);
-        return res.status(400).json({
-          error: 'Invalid verification code. Maximum attempts exceeded. Verification session terminated.',
-        });
-      }
-
-      await db
-        .update(adminVerificationSessions)
-        .set({ attemptsRemaining: remaining })
-        .where(eq(adminVerificationSessions.id, session.id));
-
-      return res.status(400).json({
-        error: `Invalid verification code. ${remaining} attempt(s) remaining.`,
+    if (!allowDemo) {
+      return res.status(403).json({
+        error: 'Forbidden: Demo authentication is disabled in this environment. Please sign in with verified institutional credentials.',
       });
     }
 
-    // Code matched! Single-use: atomically delete verification session immediately
-    await db.delete(adminVerificationSessions).where(eq(adminVerificationSessions.id, session.id));
-    simulatedDemoMailbox.delete(cleanToken);
+    const targetRole = (req.body.role || req.body.expectedRole || 'student').trim().toLowerCase();
+    const demoEmailMap: Record<string, string> = {
+      super_admin: 'admin@school.com',
+      teacher: 'teacher.adewale@school.com',
+      parent: 'parent.ibrahim@school.com',
+      student: 'student.chinedu@school.com',
+    };
 
-    // Fetch fresh user record
-    const [dbUser] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, session.userId))
-      .limit(1);
+    const targetEmail = demoEmailMap[targetRole];
+    if (!targetEmail) {
+      return res.status(400).json({ error: `Invalid demo role requested: ${targetRole}` });
+    }
 
-    if (!dbUser || dbUser.status === 'suspended') {
-      return res.status(403).json({ error: 'Account suspended or no longer exists.' });
+    let [demoUser] = await db.select().from(users).where(eq(users.email, targetEmail)).limit(1);
+    if (!demoUser) {
+      return res.status(404).json({ error: `Demo account for role ${targetRole} is not initialized.` });
+    }
+
+    // Ensure user is explicitly tagged as isDemo = true
+    if (!demoUser.isDemo) {
+      const [updated] = await db
+        .update(users)
+        .set({ isDemo: true })
+        .where(eq(users.id, demoUser.id))
+        .returning();
+      demoUser = updated;
     }
 
     const token = generateToken({
-      id: dbUser.id,
-      uid: dbUser.uid,
-      email: dbUser.email,
-      role: dbUser.role as any,
-      fullName: dbUser.fullName,
+      id: demoUser.id,
+      uid: demoUser.uid,
+      email: demoUser.email,
+      role: demoUser.role as any,
+      fullName: demoUser.fullName,
+      tokenVersion: demoUser.tokenVersion,
+      isDemo: true,
     });
 
     await logAuditEvent({
-      userId: dbUser.id,
-      userEmail: dbUser.email,
-      role: dbUser.role,
-      action: 'ADMIN_VERIFICATION_SUCCESSFUL',
+      userId: demoUser.id,
+      userEmail: demoUser.email,
+      role: demoUser.role,
+      action: 'DEMO_LOGIN_SUCCESS',
       resource: 'auth',
-      details: `Administrator ${dbUser.email} confirmed email verification code successfully`,
+      details: `Demo session initiated for role: ${targetRole}`,
       ipAddress: req.ip,
     });
 
     return res.json({
       token,
+      isDemo: true,
       user: {
-        id: dbUser.id,
-        email: dbUser.email,
-        fullName: dbUser.fullName,
-        role: dbUser.role,
-        status: dbUser.status,
+        id: demoUser.id,
+        email: demoUser.email,
+        fullName: demoUser.fullName,
+        role: demoUser.role,
+        status: demoUser.status,
+        isDemo: true,
       },
     });
   } catch (error: any) {
-    console.error('Verify admin code error:', error);
-    return res.status(500).json({ error: 'Failed to verify confirmation code' });
+    console.error('Demo login error:', error);
+    return res.status(500).json({ error: 'Failed to authenticate demo account.' });
   }
 });
 
-// 1c. Resend 6-digit Admin Email Confirmation Code (Rate Limited, Resend Limited, Secret Sanitized)
-authRouter.post('/resend-admin-code', tokenValidationLimiter, async (req: AuthRequest, res: Response) => {
+// 1e. Invalidate Session on Logout (Revokes active session tokens on server)
+authRouter.post('/logout', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const { verifyToken } = req.body;
-    if (!verifyToken) {
-      return res.status(400).json({ error: 'Verification session is required.' });
-    }
-
-    const cleanToken = (verifyToken || '').trim();
-
-    const [session] = await db
-      .select()
-      .from(adminVerificationSessions)
-      .where(eq(adminVerificationSessions.verifyToken, cleanToken))
-      .limit(1);
-
-    if (!session) {
-      return res.status(400).json({ error: 'Verification session has expired. Please sign in again.' });
-    }
-
-    // Maximum 3 resends allowed per session
-    if (session.resendCount >= 3) {
-      return res.status(400).json({
-        error: 'Maximum code resend limit reached for this session (3/3). Please sign in again.',
-      });
-    }
-
-    // Cooldown: enforce 30 seconds between resends
-    const lastResendMillis = session.lastResendAt ? new Date(session.lastResendAt).getTime() : 0;
-    const cooldownElapsed = Date.now() - lastResendMillis;
-    if (cooldownElapsed < 30 * 1000) {
-      const waitSeconds = Math.ceil((30 * 1000 - cooldownElapsed) / 1000);
-      return res.status(429).json({
-        error: `Please wait ${waitSeconds} second(s) before requesting another verification code.`,
-      });
-    }
-
-    // Generate fresh cryptographically random OTP and hash it
-    const newCode = crypto.randomInt(100000, 1000000).toString();
-    const newCodeHash = hashToken(newCode);
-    const newExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    const userId = req.user!.id;
+    await db
+      .update(users)
+      .set({
+        tokenVersion: sql`${users.tokenVersion} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
 
     await db
-      .update(adminVerificationSessions)
-      .set({
-        codeHash: newCodeHash,
-        attemptsRemaining: 5,
-        resendCount: session.resendCount + 1,
-        lastResendAt: new Date(),
-        expiresAt: newExpiresAt,
-      })
-      .where(eq(adminVerificationSessions.id, session.id));
-
-    // Update in-memory simulated record for local demo inspection if non-production
-    if (process.env.NODE_ENV !== 'production') {
-      const existingSim = simulatedDemoMailbox.get(cleanToken);
-      if (existingSim) {
-        existingSim.code = newCode;
-        existingSim.dispatchedAt = Date.now();
-      }
-    }
-
-    const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, session.userId)).limit(1);
+      .update(userSessions)
+      .set({ isValid: false })
+      .where(eq(userSessions.userId, userId));
 
     await logAuditEvent({
-      userId: session.userId,
-      userEmail: user?.email,
-      role: 'super_admin',
-      action: 'ADMIN_VERIFICATION_CODE_RESENT',
+      userId,
+      userEmail: req.user!.email,
+      role: req.user!.role,
+      action: 'USER_LOGOUT',
       resource: 'auth',
-      details: `New verification code issued for ${user?.email || 'admin'}`,
+      details: 'User logged out and session revoked.',
       ipAddress: req.ip,
     });
 
-    // Sanitized: devCode is strictly omitted
-    return res.json({
-      success: true,
-      message: `A fresh 6-digit confirmation code has been dispatched to ${user?.email || 'your email'}.`,
-    });
+    return res.json({ success: true, message: 'Logged out successfully. Session invalidated.' });
   } catch (error: any) {
-    console.error('Resend admin code error:', error);
-    return res.status(500).json({ error: 'Failed to resend confirmation code' });
+    console.error('Logout error:', error);
+    return res.status(500).json({ error: 'Failed to process logout.' });
   }
 });
 
@@ -746,12 +1044,98 @@ authRouter.get('/demo-simulated-mail', tokenValidationLimiter, async (req: AuthR
   });
 });
 
-// 1e. Authenticated Password Change (POST /api/auth/change-password)
+// 1e. Request Password Change OTP (POST /api/auth/request-password-change-otp)
+authRouter.post('/request-password-change-otp', requireAuth, passwordResetLimiter, async (req: AuthRequest, res: Response) => {
+  try {
+    const { currentPassword } = req.body;
+    if (!currentPassword) {
+      return res.status(400).json({ error: 'Current password is required to request a verification code.' });
+    }
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, req.user!.id))
+      .limit(1);
+
+    if (!user || !user.passwordHash) {
+      return res.status(400).json({ error: 'Password change not permitted for this account type.' });
+    }
+
+    const isMatch = await comparePassword(currentPassword, user.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    // Generate 6-digit OTP code and secure challenge session
+    const challengeToken = crypto.randomUUID();
+    const verificationCode = crypto.randomInt(100000, 1000000).toString();
+    const codeHash = hashToken(verificationCode);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Clean up any unconsumed password change challenges for this user
+    await db
+      .delete(authVerificationChallenges)
+      .where(and(eq(authVerificationChallenges.userId, user.id), eq(authVerificationChallenges.isConsumed, false)));
+
+    // Store in authVerificationChallenges
+    await db.insert(authVerificationChallenges).values({
+      challengeToken,
+      userId: user.id,
+      codeHash,
+      attemptsRemaining: 5,
+      resendCount: 0,
+      lastResendAt: new Date(),
+      expiresAt,
+      isConsumed: false,
+    });
+
+    if (process.env.NODE_ENV !== 'production') {
+      simulatedDemoMailbox.set(challengeToken, {
+        recipient: user.email,
+        subject: 'Password Change Verification Code',
+        verifyToken: challengeToken,
+        code: verificationCode,
+        dispatchedAt: Date.now(),
+      });
+    }
+
+    // Dispatch verification code to user's registered email
+    const emailResult = await sendPasswordChangeOtpEmail({
+      to: user.email,
+      name: user.fullName,
+      code: verificationCode,
+      expiresInMinutes: 10,
+    });
+
+    if (!emailResult.success && process.env.NODE_ENV === 'production') {
+      return res.status(500).json({ error: 'Failed to dispatch verification email. Please try again later.' });
+    }
+
+    return res.json({
+      success: true,
+      challengeToken,
+      message: `A 6-digit verification code has been sent to ${user.email}. It is valid for 10 minutes.`,
+    });
+  } catch (error: any) {
+    console.error('Request password change OTP error:', error);
+    return res.status(500).json({ error: 'Failed to send password verification code.' });
+  }
+});
+
+// 1e. Authenticated Password Change (POST /api/auth/change-password) - Enforces Email OTP
 authRouter.post('/change-password', requireAuth, passwordResetLimiter, async (req: AuthRequest, res: Response) => {
   try {
-    const { currentPassword, newPassword } = req.body;
+    const { currentPassword, newPassword, challengeToken, code } = req.body;
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: 'Current password and new password are required.' });
+    }
+
+    if (!challengeToken || !code) {
+      return res.status(400).json({
+        error: 'Email verification code is required to change password.',
+        requireOtp: true,
+      });
     }
 
     const strengthCheck = validatePasswordStrength(newPassword);
@@ -778,6 +1162,54 @@ authRouter.post('/change-password', requireAuth, passwordResetLimiter, async (re
       return res.status(401).json({ error: 'Current password is incorrect.' });
     }
 
+    // Verify OTP challenge from authVerificationChallenges
+    const [challenge] = await db
+      .select()
+      .from(authVerificationChallenges)
+      .where(
+        and(
+          eq(authVerificationChallenges.challengeToken, challengeToken),
+          eq(authVerificationChallenges.userId, user.id)
+        )
+      )
+      .limit(1);
+
+    if (!challenge) {
+      return res.status(400).json({ error: 'Invalid verification session. Please request a new verification code.' });
+    }
+
+    if (challenge.isConsumed) {
+      return res.status(400).json({ error: 'This verification code has already been used. Please request a new one.' });
+    }
+
+    if (new Date() > new Date(challenge.expiresAt)) {
+      return res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
+    }
+
+    if (challenge.attemptsRemaining <= 0) {
+      return res.status(400).json({ error: 'Too many incorrect attempts. Please request a new verification code.' });
+    }
+
+    const enteredCodeHash = hashToken(String(code).trim());
+    if (enteredCodeHash !== challenge.codeHash) {
+      const remaining = challenge.attemptsRemaining - 1;
+      await db
+        .update(authVerificationChallenges)
+        .set({ attemptsRemaining: remaining })
+        .where(eq(authVerificationChallenges.id, challenge.id));
+
+      if (remaining <= 0) {
+        return res.status(401).json({ error: 'Too many failed verification attempts. Please request a new code.' });
+      }
+      return res.status(401).json({ error: `Invalid verification code. ${remaining} attempt${remaining > 1 ? 's' : ''} remaining.` });
+    }
+
+    // Mark challenge consumed atomically
+    await db
+      .update(authVerificationChallenges)
+      .set({ isConsumed: true })
+      .where(eq(authVerificationChallenges.id, challenge.id));
+
     const newHash = await hashPassword(newPassword);
 
     await db
@@ -788,6 +1220,19 @@ authRouter.post('/change-password', requireAuth, passwordResetLimiter, async (re
       })
       .where(eq(users.id, user.id));
 
+    // Invalidate existing sessions for security
+    await db
+      .delete(userSessions)
+      .where(eq(userSessions.userId, user.id));
+
+    // Send security alert email
+    await sendPasswordChangedAlertEmail({
+      to: user.email,
+      name: user.fullName,
+      ipAddress: req.ip,
+      changeTime: new Date().toUTCString(),
+    });
+
     await logAuditEvent({
       userId: user.id,
       userEmail: user.email,
@@ -795,7 +1240,7 @@ authRouter.post('/change-password', requireAuth, passwordResetLimiter, async (re
       action: 'PASSWORD_CHANGED',
       resource: 'users',
       resourceId: user.id.toString(),
-      details: 'User successfully updated their account password.',
+      details: 'User successfully updated their account password after email OTP verification.',
       ipAddress: req.ip,
     });
 
@@ -806,6 +1251,336 @@ authRouter.post('/change-password', requireAuth, passwordResetLimiter, async (re
   } catch (error: any) {
     console.error('Change password error:', error);
     return res.status(500).json({ error: 'Failed to change password.' });
+  }
+});
+
+// 1f. Request Email Change OTP (POST /api/auth/request-email-change-otp)
+// In-memory cache for pending target email addresses tied to challenge tokens
+const pendingEmailChangeMap = new Map<string, string>();
+
+authRouter.post('/request-email-change-otp', requireAuth, passwordResetLimiter, async (req: AuthRequest, res: Response) => {
+  try {
+    const { newEmail } = req.body;
+    const userId = req.user!.id;
+
+    if (!newEmail || typeof newEmail !== 'string') {
+      return res.status(400).json({ error: 'New email address is required.' });
+    }
+
+    const cleanNewEmail = newEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanNewEmail)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
+    }
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User account not found.' });
+    }
+
+    if (cleanNewEmail === user.email.toLowerCase()) {
+      return res.status(400).json({ error: 'The new email is identical to your current email address.' });
+    }
+
+    // Verify email is not already taken by another account
+    const existing = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.email, cleanNewEmail), sql`${users.id} != ${userId}`))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return res.status(409).json({ error: `The email address "${cleanNewEmail}" is already registered to another account.` });
+    }
+
+    // Generate 6-digit OTP code and secure challenge session
+    const challengeToken = crypto.randomUUID();
+    const verificationCode = crypto.randomInt(100000, 1000000).toString();
+    const codeHash = hashToken(verificationCode);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Clean up any unconsumed challenges for this user
+    await db
+      .delete(authVerificationChallenges)
+      .where(and(eq(authVerificationChallenges.userId, user.id), eq(authVerificationChallenges.isConsumed, false)));
+
+    // Store in authVerificationChallenges
+    await db.insert(authVerificationChallenges).values({
+      challengeToken,
+      userId: user.id,
+      codeHash,
+      attemptsRemaining: 5,
+      resendCount: 0,
+      lastResendAt: new Date(),
+      expiresAt,
+      isConsumed: false,
+    });
+
+    pendingEmailChangeMap.set(challengeToken, cleanNewEmail);
+
+    if (process.env.NODE_ENV !== 'production') {
+      simulatedDemoMailbox.set(challengeToken, {
+        recipient: cleanNewEmail,
+        subject: 'Email Change Verification Code',
+        verifyToken: challengeToken,
+        code: verificationCode,
+        dispatchedAt: Date.now(),
+      });
+    }
+
+    // Send single-use verification code to the requested new email
+    const emailResult = await sendEmailChangeOtpEmail({
+      to: cleanNewEmail,
+      name: user.fullName,
+      newEmail: cleanNewEmail,
+      code: verificationCode,
+      expiresInMinutes: 10,
+    });
+
+    if (!emailResult.success && process.env.NODE_ENV === 'production') {
+      return res.status(500).json({ error: 'Failed to dispatch verification email. Please verify the email address and try again.' });
+    }
+
+    return res.json({
+      success: true,
+      challengeToken,
+      message: `A 6-digit verification code has been dispatched to ${cleanNewEmail}. Please enter the code to confirm the change.`,
+    });
+  } catch (error: any) {
+    console.error('Request email change OTP error:', error);
+    return res.status(500).json({ error: 'Failed to process email verification request.' });
+  }
+});
+
+// 1g. Confirm Email Change with OTP (POST /api/auth/confirm-email-change)
+authRouter.post('/confirm-email-change', requireAuth, passwordResetLimiter, async (req: AuthRequest, res: Response) => {
+  try {
+    const { newEmail, challengeToken, code } = req.body;
+    const userId = req.user!.id;
+
+    if (!newEmail || !challengeToken || !code) {
+      return res.status(400).json({ error: 'New email address, verification code, and challenge token are required.' });
+    }
+
+    const cleanNewEmail = String(newEmail).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanNewEmail)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
+    }
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User account not found.' });
+    }
+
+    const oldEmail = user.email;
+
+    // Verify OTP challenge session
+    const [challenge] = await db
+      .select()
+      .from(authVerificationChallenges)
+      .where(
+        and(
+          eq(authVerificationChallenges.challengeToken, challengeToken),
+          eq(authVerificationChallenges.userId, user.id)
+        )
+      )
+      .limit(1);
+
+    if (!challenge) {
+      return res.status(400).json({ error: 'Invalid or expired verification session. Please request a new verification code.' });
+    }
+
+    if (challenge.isConsumed) {
+      return res.status(400).json({ error: 'This verification code has already been used. Please request a new code.' });
+    }
+
+    if (new Date() > new Date(challenge.expiresAt)) {
+      return res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
+    }
+
+    if (challenge.attemptsRemaining <= 0) {
+      return res.status(400).json({ error: 'Too many incorrect attempts. Please request a new verification code.' });
+    }
+
+    const enteredCodeHash = hashToken(String(code).trim());
+    if (enteredCodeHash !== challenge.codeHash) {
+      const remaining = challenge.attemptsRemaining - 1;
+      await db
+        .update(authVerificationChallenges)
+        .set({ attemptsRemaining: remaining })
+        .where(eq(authVerificationChallenges.id, challenge.id));
+
+      if (remaining <= 0) {
+        return res.status(401).json({ error: 'Too many failed verification attempts. Please request a new code.' });
+      }
+      return res.status(401).json({ error: `Invalid verification code. ${remaining} attempt${remaining > 1 ? 's' : ''} remaining.` });
+    }
+
+    // Validate that the target email matches what was requested
+    const cachedPending = pendingEmailChangeMap.get(challengeToken);
+    if (cachedPending && cachedPending !== cleanNewEmail) {
+      return res.status(400).json({ error: 'The email address does not match the verification code session.' });
+    }
+
+    // Verify target email is not already taken
+    const existing = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.email, cleanNewEmail), sql`${users.id} != ${userId}`))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return res.status(409).json({ error: `The email address "${cleanNewEmail}" is already registered to another account.` });
+    }
+
+    // Mark challenge as consumed atomically
+    await db
+      .update(authVerificationChallenges)
+      .set({ isConsumed: true })
+      .where(eq(authVerificationChallenges.id, challenge.id));
+
+    pendingEmailChangeMap.delete(challengeToken);
+
+    // Atomically update user's email
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        email: cleanNewEmail,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+
+    // Send confirmation security alerts to both old and new email addresses
+    const changeTime = new Date().toUTCString();
+    await sendEmailChangedAlertEmail({
+      to: cleanNewEmail,
+      name: updatedUser.fullName,
+      oldEmail,
+      newEmail: cleanNewEmail,
+      ipAddress: req.ip,
+      changeTime,
+    });
+
+    if (oldEmail && oldEmail.toLowerCase() !== cleanNewEmail) {
+      await sendEmailChangedAlertEmail({
+        to: oldEmail,
+        name: updatedUser.fullName,
+        oldEmail,
+        newEmail: cleanNewEmail,
+        ipAddress: req.ip,
+        changeTime,
+      });
+    }
+
+    await logAuditEvent({
+      userId: updatedUser.id,
+      userEmail: updatedUser.email,
+      role: updatedUser.role,
+      action: 'USER_EMAIL_UPDATED',
+      resource: 'users',
+      resourceId: updatedUser.id.toString(),
+      details: `User updated account email from ${oldEmail} to ${cleanNewEmail} with verified OTP challenge.`,
+      ipAddress: req.ip,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Email address updated and verified successfully! Security confirmation notices sent.',
+      user: {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        fullName: updatedUser.fullName,
+        role: updatedUser.role,
+        status: updatedUser.status,
+        phone: updatedUser.phone,
+        isDemo: updatedUser.isDemo,
+      },
+    });
+  } catch (error: any) {
+    console.error('Confirm email change error:', error);
+    return res.status(500).json({ error: 'Failed to verify and update email address.' });
+  }
+});
+
+// 1h. Authenticated Profile Update (PUT /api/auth/profile) - Name & Phone Only
+// Direct email modifications are strictly disallowed and rejected with an error directing to OTP verification.
+authRouter.put('/profile', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { fullName, email, phone } = req.body;
+    const userId = req.user!.id;
+
+    if (!fullName || !fullName.trim()) {
+      return res.status(400).json({ error: 'Full Name is required.' });
+    }
+
+    const cleanName = fullName.trim();
+    const cleanPhone = phone ? phone.trim() : null;
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User account record not found.' });
+    }
+
+    // Security check: Reject direct unverified email modifications
+    if (email && email.trim().toLowerCase() !== user.email.toLowerCase()) {
+      return res.status(400).json({
+        error: 'Email address cannot be modified directly without verification. Please use the Change Email button to receive a single-use verification code.',
+        requireEmailOtp: true,
+      });
+    }
+
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        fullName: cleanName,
+        phone: cleanPhone,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+
+    await logAuditEvent({
+      userId: updatedUser.id,
+      userEmail: updatedUser.email,
+      role: updatedUser.role,
+      action: 'USER_PROFILE_UPDATED',
+      resource: 'users',
+      resourceId: updatedUser.id.toString(),
+      details: `User updated account profile details (Name: ${cleanName})`,
+      ipAddress: req.ip,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Account profile updated successfully.',
+      user: {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        fullName: updatedUser.fullName,
+        role: updatedUser.role,
+        status: updatedUser.status,
+        phone: updatedUser.phone,
+        isDemo: updatedUser.isDemo,
+      },
+    });
+  } catch (error: any) {
+    console.error('Update profile error:', error);
+    return res.status(500).json({ error: 'Failed to update profile.' });
   }
 });
 
@@ -1824,21 +2599,6 @@ authRouter.post('/forgot-password', passwordResetLimiter, async (req: AuthReques
       return res.status(400).json({ error: 'Email address or School ID is required' });
     }
 
-    const isEmailDeliveryConfigured = Boolean(
-      process.env.SMTP_HOST ||
-      process.env.SENDGRID_API_KEY ||
-      process.env.RESEND_API_KEY ||
-      process.env.AWS_SES_REGION ||
-      process.env.EMAIL_SERVICE_CONFIGURED === 'true'
-    );
-
-    if (!isEmailDeliveryConfigured) {
-      return res.status(503).json({
-        error: 'Password reset email delivery is currently unavailable because an outbound email service (SMTP) is not configured. Please contact the school administrator directly to reset your credentials or use the Student/Staff portal account activation.',
-        serviceConfigured: false,
-      });
-    }
-
     const genericSuccessResponse = {
       message: 'If an account exists with this identifier, password recovery instructions have been prepared and dispatched.',
       serviceConfigured: true,
@@ -1920,6 +2680,18 @@ authRouter.post('/forgot-password', passwordResetLimiter, async (req: AuthReques
       ipAddress: req.ip,
     });
 
+    // Send real password reset email with secure 1-hour link
+    const emailResult = await sendPasswordResetEmail({
+      recipientEmail: user.email,
+      recipientName: user.fullName || 'School Member',
+      resetToken: rawResetToken,
+      expiresInMinutes: 60,
+    });
+
+    if (!emailResult.success) {
+      console.warn(`[PasswordReset] Failed to send email to ${user.email}: ${emailResult.error}`);
+    }
+
     res.json(genericSuccessResponse);
   } catch (error: any) {
     console.error('Password reset request error:', error);
@@ -2000,7 +2772,16 @@ authRouter.post('/reset-student-password', passwordResetLimiter, async (req: Aut
     }
 
     const newHash = await hashPassword(newPassword);
-    await db.update(users).set({ passwordHash: newHash }).where(eq(users.id, studentUserId));
+    // Invalidate prior sessions
+    await db
+      .update(users)
+      .set({
+        passwordHash: newHash,
+        tokenVersion: sql`COALESCE(${users.tokenVersion}, 1) + 1`,
+      })
+      .where(eq(users.id, studentUserId));
+
+    await db.update(userSessions).set({ isValid: false }).where(eq(userSessions.userId, studentUserId));
 
     const userRecords = await db.select().from(users).where(eq(users.id, studentUserId)).limit(1);
     const user = userRecords[0];
@@ -2016,12 +2797,23 @@ authRouter.post('/reset-student-password', passwordResetLimiter, async (req: Aut
       ipAddress: req.ip,
     });
 
+    if (user?.email) {
+      sendPasswordChangedAlertEmail({
+        recipientEmail: user.email,
+        recipientName: user.fullName || `${student.firstName} ${student.lastName}`,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] as string,
+      }).catch((err) => console.warn('[SecurityAlert] Failed to send password changed alert to student:', err));
+    }
+
     const token = generateToken({
       id: user.id,
       uid: user.uid,
       email: user.email,
       role: 'student',
       fullName: user.fullName,
+      tokenVersion: user.tokenVersion || 1,
+      isDemo: user.isDemo || false,
     });
 
     res.json({
@@ -2055,6 +2847,7 @@ authRouter.post('/reset-password', passwordResetLimiter, async (req: AuthRequest
     }
 
     const resetTokenHash = hashToken(resetToken);
+    let targetUser: { id: number; email: string; fullName: string | null } | null = null;
 
     await db.transaction(async (tx) => {
       const foundTokens = await tx
@@ -2076,15 +2869,50 @@ authRouter.post('/reset-password', passwordResetLimiter, async (req: AuthRequest
       const pr = foundTokens[0];
       const newHash = await hashPassword(newPassword);
 
-      await tx.update(users).set({ passwordHash: newHash }).where(eq(users.id, pr.userId));
+      // Invalidate all existing sessions via tokenVersion increment
+      await tx
+        .update(users)
+        .set({
+          passwordHash: newHash,
+          tokenVersion: sql`COALESCE(${users.tokenVersion}, 1) + 1`,
+        })
+        .where(eq(users.id, pr.userId));
+
       await tx.update(passwordResets).set({ isUsed: true }).where(eq(passwordResets.id, pr.id));
+
+      await tx
+        .update(userSessions)
+        .set({ isValid: false })
+        .where(eq(userSessions.userId, pr.userId));
+
+      const userRecords = await tx
+        .select({ id: users.id, email: users.email, fullName: users.fullName })
+        .from(users)
+        .where(eq(users.id, pr.userId))
+        .limit(1);
+
+      if (userRecords.length > 0) {
+        targetUser = userRecords[0];
+      }
     });
 
     logAuditEvent({
+      userId: targetUser?.id,
+      userEmail: targetUser?.email,
       action: 'PASSWORD_RESET_COMPLETED',
       resource: 'users',
       ipAddress: req.ip,
     }).catch(() => {});
+
+    // Send security alert notification email
+    if (targetUser?.email) {
+      sendPasswordChangedAlertEmail({
+        recipientEmail: targetUser.email,
+        recipientName: targetUser.fullName || 'School Member',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] as string,
+      }).catch((err) => console.warn('[SecurityAlert] Failed to send password changed alert:', err));
+    }
 
     res.json({ message: 'Password has been securely reset. You may now sign in with your new password.' });
   } catch (error: any) {

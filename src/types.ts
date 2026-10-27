@@ -87,12 +87,15 @@ export const AVAILABLE_STAFF_PERMISSIONS: PermissionDefinition[] = [
 
 export interface User {
   id: number;
+  uid?: string;
   email: string;
   fullName: string;
   role: UserRole;
   status: 'active' | 'suspended' | 'pending';
   phone?: string;
   permissions?: StaffPermission[] | string[];
+  tokenVersion?: number;
+  isDemo?: boolean;
   createdAt?: string;
 }
 

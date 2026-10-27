@@ -1,0 +1,6 @@
+{
+  "summary":  "Architectural blueprint to decouple Demo Sandbox testing from Live Production authentication via dedicated routes (/demo vs /login), isolated synthetic sandbox flags, and hardened live authentication (2FA, account lockouts, rate limiting).",
+  "updatedAt":  "2026-10-24T16:10:36.242781082Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

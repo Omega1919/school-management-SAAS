@@ -1586,13 +1586,22 @@ export async function ensureDefaultDemoData(): Promise<void> {
         fullName: 'Demo Super Administrator',
         role: 'super_admin',
         status: 'active',
+        isDemo: true,
         phone: '+234 800 000 0001',
       });
       console.log(`✓ Demo Super Admin account verified: ${demoAdminEmail}`);
     } else {
       await db
         .update(users)
-        .set({ passwordHash: demoAdminPassHash, status: 'active', role: 'super_admin', fullName: 'Demo Super Administrator' })
+        .set({
+          passwordHash: demoAdminPassHash,
+          status: 'active',
+          role: 'super_admin',
+          fullName: 'Demo Super Administrator',
+          isDemo: true,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        })
         .where(eq(users.id, existingDemoAdmin.id));
       console.log(`✓ Demo Super Admin credentials synchronized for: ${demoAdminEmail}`);
     }
@@ -1659,17 +1668,17 @@ export async function ensureDefaultDemoData(): Promise<void> {
 
       await db
         .update(users)
-        .set({ passwordHash: teacherPassHash, status: 'active' })
+        .set({ passwordHash: teacherPassHash, status: 'active', isDemo: true, failedLoginAttempts: 0, lockedUntil: null })
         .where(eq(users.id, teacherUser.id));
 
       await db
         .update(users)
-        .set({ passwordHash: parentPassHash, status: 'active' })
+        .set({ passwordHash: parentPassHash, status: 'active', isDemo: true, failedLoginAttempts: 0, lockedUntil: null })
         .where(eq(users.id, parentUser.id));
 
       await db
         .update(users)
-        .set({ passwordHash: studentPassHash, status: 'active' })
+        .set({ passwordHash: studentPassHash, status: 'active', isDemo: true, failedLoginAttempts: 0, lockedUntil: null })
         .where(eq(users.id, studentUser.id));
 
       console.log('✓ Demo admin, teacher, parent, and student accounts verified with active credentials.');

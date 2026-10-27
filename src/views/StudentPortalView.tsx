@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useSettings } from '../context/SettingsContext.tsx';
+import { useAccountModal } from '../context/AccountModalContext.tsx';
+import { User, LogOut } from 'lucide-react';
 import { apiRequest } from '../lib/api.ts';
 
 export const StudentPortalView: React.FC<{ onNavigate: (view: string) => void }> = ({
@@ -20,6 +22,7 @@ export const StudentPortalView: React.FC<{ onNavigate: (view: string) => void }>
 }) => {
   const { user } = useAuth();
   const { currencySymbol } = useSettings();
+  const { openAccountModal, openLogoutConfirm } = useAccountModal();
 
   const [studentInfo, setStudentInfo] = useState<any>(null);
   const [homeworkList, setHomeworkList] = useState<any[]>([]);
@@ -69,41 +72,60 @@ export const StudentPortalView: React.FC<{ onNavigate: (view: string) => void }>
     <div className="space-y-6">
       {/* Banner */}
       <div className="bg-linear-to-r from-blue-700 via-indigo-700 to-purple-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-blue-200 text-xs font-semibold backdrop-blur-xs mb-3 border border-white/20">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>Student Academic Space</span>
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-blue-200 text-xs font-semibold backdrop-blur-xs mb-3 border border-white/20">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Student Academic Space</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              Hi, {user?.fullName || 'Student'}!
+            </h1>
+            <p className="mt-2 text-sm text-blue-100 max-w-xl leading-relaxed">
+              Stay on top of your daily class schedule, submit homework before the deadline, and inspect your exam scores.
+            </p>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Hi, {user?.fullName || 'Student'}!
-          </h1>
-          <p className="mt-2 text-sm text-blue-100 max-w-xl leading-relaxed">
-            Stay on top of your daily class schedule, submit homework before the deadline, and inspect your exam scores.
-          </p>
 
-          <div className="mt-5 flex flex-wrap gap-2.5">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             <button
-              onClick={() => onNavigate('homework')}
-              className="px-4 py-2 bg-white text-blue-900 font-semibold text-xs sm:text-sm rounded-xl shadow-md hover:bg-blue-50 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+              onClick={openAccountModal}
+              className="px-3.5 py-2 bg-white text-blue-900 font-bold text-xs rounded-xl shadow-md hover:bg-blue-50 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 min-h-[38px]"
             >
-              <FileText className="w-4 h-4 text-blue-700" />
-              <span>Submit Homework</span>
+              <User className="w-4 h-4 text-blue-700" />
+              <span>Manage Account</span>
             </button>
             <button
-              onClick={() => onNavigate('results')}
-              className="px-4 py-2 bg-white/15 text-white font-semibold text-xs sm:text-sm rounded-xl hover:bg-white/25 active:scale-95 transition-all border border-white/20 cursor-pointer flex items-center gap-1.5"
+              onClick={openLogoutConfirm}
+              className="px-3.5 py-2 bg-white/15 text-white font-bold text-xs rounded-xl hover:bg-white/25 active:scale-95 transition-all border border-white/20 cursor-pointer flex items-center gap-1.5 min-h-[38px]"
             >
-              <Award className="w-4 h-4" />
-              <span>View Report Card</span>
-            </button>
-            <button
-              onClick={() => onNavigate('timetable')}
-              className="px-4 py-2 bg-purple-500/30 text-white font-semibold text-xs sm:text-sm rounded-xl hover:bg-purple-500/50 active:scale-95 transition-all border border-purple-400/30 cursor-pointer flex items-center gap-1.5"
-            >
-              <Clock className="w-4 h-4" />
-              <span>My Class Timetable</span>
+              <LogOut className="w-4 h-4 text-rose-200" />
+              <span>Sign Out</span>
             </button>
           </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-2.5 relative z-10 pt-2 border-t border-white/15">
+          <button
+            onClick={() => onNavigate('homework')}
+            className="px-3.5 py-1.5 bg-white/10 text-white font-semibold text-xs rounded-lg hover:bg-white/20 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Submit Homework</span>
+          </button>
+          <button
+            onClick={() => onNavigate('results')}
+            className="px-3.5 py-1.5 bg-white/10 text-white font-semibold text-xs rounded-lg hover:bg-white/20 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            <Award className="w-3.5 h-3.5" />
+            <span>View Report Card</span>
+          </button>
+          <button
+            onClick={() => onNavigate('timetable')}
+            className="px-3.5 py-1.5 bg-purple-500/20 text-white font-semibold text-xs rounded-lg hover:bg-purple-500/40 active:scale-95 transition-all border border-purple-400/20 cursor-pointer flex items-center gap-1.5"
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>My Class Timetable</span>
+          </button>
         </div>
       </div>
 

@@ -11,12 +11,6 @@ process.env.NODE_ENV = 'development';
 process.env.JWT_SECRET = 'super-secure-test-jwt-secret-with-more-than-32-chars-entropy!';
 process.env.ENABLE_DEMO_2FA_INSPECTION = 'true';
 
-import express from 'express';
-import { runMigrations } from './src/db/migrations.ts';
-import { db } from './src/db/index.ts';
-import { users, adminVerificationSessions } from './src/db/schema.ts';
-import { authenticate } from './src/middleware/auth.ts';
-import { authRouter } from './src/routes/auth.ts';
 import { hashPassword, comparePassword, validatePasswordStrength } from './src/lib/auth.ts';
 import { hashToken } from './src/lib/identifiers.ts';
 import { eq } from 'drizzle-orm';
@@ -26,6 +20,14 @@ async function runBatch1Tests() {
   console.log('RUNNING BATCH 1 SECURITY & 2FA TESTS');
   console.log('Isolated DB:', isolatedTestDbDir);
   console.log('====================================================');
+
+  // Dynamically import database modules so process.env.PGLITE_DATA_DIR takes effect
+  const express = (await import('express')).default;
+  const { runMigrations } = await import('./src/db/migrations.ts');
+  const { db } = await import('./src/db/index.ts');
+  const { users, adminVerificationSessions } = await import('./src/db/schema.ts');
+  const { authenticate } = await import('./src/middleware/auth.ts');
+  const { authRouter } = await import('./src/routes/auth.ts');
 
   // 1. Run migrations
   console.log('\n[STEP 1] Running migrations...');

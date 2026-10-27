@@ -13,9 +13,16 @@ import {
   Shield,
 } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext.tsx';
+import { useAccountModal } from '../context/AccountModalContext.tsx';
+import { useAuth } from '../context/AuthContext.tsx';
+import { User, LogOut } from 'lucide-react';
 import { apiRequest } from '../lib/api.ts';
 
+import { AccountManagementSection } from '../components/AccountManagementSection.tsx';
+
 export const SettingsView: React.FC = () => {
+  const { user } = useAuth();
+  const { openLogoutConfirm } = useAccountModal();
   const {
     settings,
     schoolName,
@@ -23,6 +30,9 @@ export const SettingsView: React.FC = () => {
     currencySymbol,
     refreshSettings,
   } = useSettings();
+
+  const isSuperAdmin = user?.role === 'super_admin';
+  const [activeTab, setActiveTab] = useState<'account' | 'school'>(isSuperAdmin ? 'account' : 'account');
 
   const [formData, setFormData] = useState({
     schoolName: schoolName || 'Springfield International Academy',
@@ -82,12 +92,53 @@ export const SettingsView: React.FC = () => {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
           <Settings className="w-6 h-6 text-purple-600" />
-          <span>School Configuration & Global Settings</span>
+          <span>{isSuperAdmin ? 'Settings & Account Management' : 'My Account & Settings'}</span>
         </h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Manage institution details, operational timezone, currency symbols, and attendance policies
+          {isSuperAdmin
+            ? 'Manage your personal account credentials, security preferences, and institution-wide parameters'
+            : 'Manage your personal account profile, contact information, and security credentials'}
         </p>
       </div>
+
+      {/* Role Navigation Tabs if Super Admin */}
+      {isSuperAdmin && (
+        <div className="flex border-b border-slate-200 gap-3">
+          <button
+            type="button"
+            onClick={() => setActiveTab('account')}
+            className={`flex items-center gap-2 py-3 px-4 text-xs sm:text-sm font-bold border-b-2 transition-all cursor-pointer ${
+              activeTab === 'account'
+                ? 'border-purple-600 text-purple-700 bg-purple-50/60 rounded-t-xl'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <User className="w-4 h-4" />
+            <span>My Account</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('school')}
+            className={`flex items-center gap-2 py-3 px-4 text-xs sm:text-sm font-bold border-b-2 transition-all cursor-pointer ${
+              activeTab === 'school'
+                ? 'border-purple-600 text-purple-700 bg-purple-50/60 rounded-t-xl'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <School className="w-4 h-4" />
+            <span>School Configuration</span>
+          </button>
+        </div>
+      )}
+
+      {/* Account Management Embedded Section */}
+      {(!isSuperAdmin || activeTab === 'account') && (
+        <AccountManagementSection />
+      )}
+
+      {/* School Configuration Section for Super Admin */}
+      {isSuperAdmin && activeTab === 'school' && (
+        <div className="space-y-6">
 
       {success && (
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-2">
@@ -283,6 +334,8 @@ export const SettingsView: React.FC = () => {
           </button>
         </div>
       </form>
+      </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,5 @@
 import React from 'react';
 import { Menu, Calendar, PanelLeftClose, PanelLeft, Search, MessageSquare } from 'lucide-react';
-import { UserRole } from '../types.ts';
 import { useCommunications } from '../context/CommunicationsContext.tsx';
 
 interface HeaderProps {
@@ -27,6 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateToMessages,
 }) => {
   const { unreadCount } = useCommunications();
+
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-6 lg:px-8 xl:px-10 h-16 min-h-[64px] flex items-center justify-between shadow-2xs transition-all gap-3 w-full">
       <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
@@ -128,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Active Academic Term */}
         {activeTerm && (
-          <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-100 text-purple-800 text-xs font-medium">
+          <div className="hidden xl:flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-100 text-purple-800 text-xs font-medium">
             <Calendar className="w-3.5 h-3.5 text-purple-600" />
             <span>
               {activeTerm.sessionName} • {activeTerm.termName}

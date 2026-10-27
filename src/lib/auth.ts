@@ -4,10 +4,12 @@ import jwt from 'jsonwebtoken';
 
 export interface TokenPayload {
   id: number;
-  uid: string;
+  uid?: string;
   email: string;
   role: 'super_admin' | 'teacher' | 'parent' | 'student';
-  fullName: string;
+  fullName?: string;
+  tokenVersion?: number;
+  isDemo?: boolean;
 }
 
 export interface StreamTokenPayload {
@@ -96,13 +98,18 @@ export function validatePasswordStrength(password: string): { valid: boolean; er
   return { valid: true };
 }
 
-export function generateToken(payload: TokenPayload, expiresIn = '7d'): string {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn } as jwt.SignOptions);
+export function generateToken(payload: TokenPayload, expiresIn = '24h'): string {
+  return jwt.sign(payload, getJwtSecret(), {
+    algorithm: 'HS256',
+    expiresIn,
+  } as jwt.SignOptions);
 }
 
 export function verifyToken(token: string): TokenPayload | null {
   try {
-    return jwt.verify(token, getJwtSecret()) as TokenPayload;
+    return jwt.verify(token, getJwtSecret(), {
+      algorithms: ['HS256'],
+    }) as TokenPayload;
   } catch {
     return null;
   }

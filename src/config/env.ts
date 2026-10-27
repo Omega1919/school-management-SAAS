@@ -17,6 +17,7 @@ export function validateEnvironment(): EnvValidationResult {
   const databaseUrl = process.env.DATABASE_URL?.trim();
   const sqlHost = process.env.SQL_HOST?.trim();
   const adminPassword = process.env.ADMIN_PASSWORD?.trim();
+  const requireSmtp = process.env.REQUIRE_SMTP === 'true';
 
   if (isProd) {
     // 1. Mandatory Cryptographically Strong JWT Secret in Production
@@ -34,6 +35,19 @@ export function validateEnvironment(): EnvValidationResult {
     // 3. Admin Bootstrap Password Security
     if (adminPassword && adminPassword.length < 12) {
       errors.push(`FATAL: ADMIN_PASSWORD in production must be at least 12 characters (current length: ${adminPassword.length}).`);
+    }
+
+    // 4. SMTP Email Configuration in Production (when REQUIRE_SMTP is enabled or configured)
+    if (requireSmtp || process.env.SMTP_HOST) {
+      if (!process.env.SMTP_HOST) errors.push('FATAL: SMTP_HOST is required for production email delivery.');
+      if (!process.env.SMTP_USER) errors.push('FATAL: SMTP_USER is required for production email delivery.');
+      if (!process.env.SMTP_PASS) errors.push('FATAL: SMTP_PASS is required for production email delivery.');
+      if (!process.env.EMAIL_FROM) errors.push('FATAL: EMAIL_FROM is required for production email delivery.');
+    }
+
+    // 5. Explicit check on demo logins in production
+    if (process.env.ENABLE_DEMO_LOGINS === 'true') {
+      console.warn('SECURITY WARNING: ENABLE_DEMO_LOGINS is enabled in a production environment.');
     }
   } else {
     // Development/Test Environment Validation Warnings

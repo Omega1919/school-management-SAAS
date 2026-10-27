@@ -100,15 +100,37 @@ export const createPool = () => {
   }
 
   if (!global._pgliteInstance) {
-    global._pgliteInstance = new PGlite(dataDir);
+    try {
+      const pidFile = path.join(dataDir, 'postmaster.pid');
+      if (fs.existsSync(pidFile)) {
+        try { fs.unlinkSync(pidFile); } catch (e) {}
+      }
+      global._pgliteInstance = new PGlite(dataDir);
+    } catch (initErr) {
+      console.warn('Notice: Corrupted local embedded database files detected, resetting data directory for clean startup...', initErr);
+      try {
+        fs.rmSync(dataDir, { recursive: true, force: true });
+        fs.mkdirSync(dataDir, { recursive: true });
+        global._pgliteInstance = new PGlite(dataDir);
+      } catch (fallbackErr) {
+        console.warn('Falling back to in-memory PGlite instance:', fallbackErr);
+        global._pgliteInstance = new PGlite();
+      }
+    }
   }
 
   // Wrapper pool object for compatibility
   global._postgresPool = {
     query: async (text: string, params?: any[]) => {
+      if (global._pgliteInstance?.waitReady) {
+        await global._pgliteInstance.waitReady;
+      }
       return await global._pgliteInstance.query(text, params);
     },
     exec: async (sql: string) => {
+      if (global._pgliteInstance?.waitReady) {
+        await global._pgliteInstance.waitReady;
+      }
       return await global._pgliteInstance.exec(sql);
     },
     isPglite: true,
@@ -189,6 +211,9 @@ export async function verifyDatabase(): Promise<void> {
   await withDbRetry(async () => {
     try {
       if (global._pgliteInstance) {
+        if (global._pgliteInstance.waitReady) {
+          await global._pgliteInstance.waitReady;
+        }
         await global._pgliteInstance.query('SELECT 1');
       } else {
         await pool.query('SELECT 1');

@@ -32,7 +32,11 @@ async function startServer() {
   validateAuthEnvironment();
 
   const app = express();
-  const PORT = parseInt(process.env.PORT || '3000', 10);
+
+  // Dev server must run on port 3000. In Cloud Run, PORT is set to 8080 which is occupied by Nginx.
+  const PORT = (process.env.PORT && process.env.PORT !== '8080')
+    ? parseInt(process.env.PORT, 10)
+    : 3000;
 
   // Configure reverse proxy trust
   app.set('trust proxy', 1);

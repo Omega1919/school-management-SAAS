@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 export interface AuthenticatedUser extends TokenPayload {
   status?: string;
   permissions?: string[];
+  isDemo?: boolean;
   dbUser?: any;
 }
 
@@ -77,6 +78,8 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
           role: users.role,
           status: users.status,
           fullName: users.fullName,
+          tokenVersion: users.tokenVersion,
+          isDemo: users.isDemo,
         })
         .from(users)
         .where(eq(users.id, jwtPayload.id))
@@ -87,9 +90,19 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
         return next();
       }
 
+      // Check token version to enforce server-side session invalidation on password reset or logout
+      if (
+        typeof jwtPayload.tokenVersion === 'number' &&
+        typeof dbUser.tokenVersion === 'number' &&
+        jwtPayload.tokenVersion !== dbUser.tokenVersion
+      ) {
+        // Token has been revoked
+        return next();
+      }
+
       const permissions = await fetchUserPermissions(dbUser.id, dbUser.role);
 
-      // Always assign fresh role and state from database (instant role-change & suspension enforcement)
+      // Always assign fresh role, state, and permissions from database (prevents client-forged roles)
       req.user = {
         id: dbUser.id,
         uid: dbUser.uid,
@@ -97,6 +110,8 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
         role: dbUser.role as any,
         status: dbUser.status,
         fullName: dbUser.fullName,
+        tokenVersion: dbUser.tokenVersion,
+        isDemo: dbUser.isDemo,
         permissions,
       };
       return next();

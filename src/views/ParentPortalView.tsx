@@ -12,9 +12,12 @@ import {
   CheckCircle,
   AlertCircle,
   TrendingUp,
+  User,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useSettings } from '../context/SettingsContext.tsx';
+import { useAccountModal } from '../context/AccountModalContext.tsx';
 import { apiRequest } from '../lib/api.ts';
 import { Badge } from '../components/Badge.tsx';
 
@@ -36,6 +39,7 @@ export const ParentPortalView: React.FC<{ onNavigate: (view: string) => void }> 
 }) => {
   const { user } = useAuth();
   const { currencySymbol } = useSettings();
+  const { openAccountModal, openLogoutConfirm } = useAccountModal();
 
   const [childrenList, setChildrenList] = useState<ChildData[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
@@ -79,16 +83,35 @@ export const ParentPortalView: React.FC<{ onNavigate: (view: string) => void }> 
     <div className="space-y-6">
       {/* Welcome Banner */}
       <div className="bg-linear-to-r from-emerald-700 to-teal-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="relative z-10">
-          <span className="px-3 py-1 rounded-full bg-white/15 text-emerald-200 text-xs font-semibold backdrop-blur-xs mb-3 inline-block border border-white/20">
-            Parent Guardian Portal
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Welcome, {user?.fullName}!
-          </h1>
-          <p className="mt-2 text-sm text-emerald-100 max-w-xl leading-relaxed">
-            Monitor your children's real-time attendance, test performance, homework completion, and school fee records.
-          </p>
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <span className="px-3 py-1 rounded-full bg-white/15 text-emerald-200 text-xs font-semibold backdrop-blur-xs mb-3 inline-block border border-white/20">
+              Parent Guardian Portal
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              Welcome, {user?.fullName}!
+            </h1>
+            <p className="mt-2 text-sm text-emerald-100 max-w-xl leading-relaxed">
+              Monitor your children's real-time attendance, test performance, homework completion, and school fee records.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            <button
+              onClick={openAccountModal}
+              className="px-4 py-2 bg-white text-emerald-900 font-bold text-xs rounded-xl shadow-md hover:bg-emerald-50 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 min-h-[38px]"
+            >
+              <User className="w-4 h-4 text-emerald-700" />
+              <span>Manage Account</span>
+            </button>
+            <button
+              onClick={openLogoutConfirm}
+              className="px-4 py-2 bg-white/15 text-white font-bold text-xs rounded-xl hover:bg-white/25 active:scale-95 transition-all border border-white/20 cursor-pointer flex items-center gap-1.5 min-h-[38px]"
+            >
+              <LogOut className="w-4 h-4 text-rose-200" />
+              <span>Sign Out</span>
+            </button>
+          </div>
         </div>
       </div>
 

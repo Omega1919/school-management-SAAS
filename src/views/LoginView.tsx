@@ -135,7 +135,7 @@ const PORTAL_CONFIGS: Record<UserRole, PortalConfig> = {
     signupPrompt: 'Executive management and administrative control access',
     allowSignUp: false, // Admin accounts cannot casually self-register
     allowGoogle: true,
-    accessNote: 'Super Admin credentials (direct demo login, 2FA bypassed)',
+    accessNote: 'Institutional Super Admin credentials (2FA Enforced)',
     accentHex: '#9333EA',
     buttonClass: 'bg-[#9333EA] hover:bg-[#7E22CE] shadow-purple-900/40',
     focusBorderClass: 'focus:border-[#9333EA]',
@@ -150,7 +150,7 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
-  const { login, verifyAdminCode, resendAdminCode, loginWithGoogle } = useAuth();
+  const { login, demoLogin, verify2faCode, resend2faCode, loginWithGoogle } = useAuth();
   const { schoolName } = useSettings();
 
   // Determine initial role from URL pathname or query param
@@ -173,16 +173,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
   // Active form view: 'login' | 'signup'
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
 
-  // Form states initialized to current role defaults
-  const [identifier, setIdentifier] = useState(activeConfig.defaultEmail);
-  const [password, setPassword] = useState(activeConfig.defaultPass);
+  // Form states initialized empty for live production authentication
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
-  // 2FA Admin Email Verification State
+  // 2FA Email Verification State
   const [verifySession, setVerifySession] = useState<{
     verifyToken: string;
     email: string;
@@ -204,13 +205,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
 
   // Sync role changes with URL
   const switchPortal = (newRole: UserRole, updateHistory = true) => {
     setRole(newRole);
     const cfg = PORTAL_CONFIGS[newRole];
-    setIdentifier(cfg.defaultEmail);
-    setPassword(cfg.defaultPass);
+    setIdentifier('');
+    setPassword('');
     setError(null);
     setVerifySession(null);
     setVerificationCode('');
@@ -228,8 +231,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
       const detected = getInitialRole();
       setRole(detected);
       const cfg = PORTAL_CONFIGS[detected];
-      setIdentifier(cfg.defaultEmail);
-      setPassword(cfg.defaultPass);
+      setIdentifier('');
+      setPassword('');
       setVerifySession(null);
       setVerificationCode('');
       if (!cfg.allowSignUp && activeTab === 'signup') {
@@ -299,6 +302,18 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
     }
   };
 
+  const handleDemoLogin = async (roleToLogin: string) => {
+    setDemoLoading(true);
+    setError(null);
+    try {
+      await demoLogin(roleToLogin);
+    } catch (err: any) {
+      setError(err.message || 'Demo access is currently unavailable or disabled by institution policy.');
+    } finally {
+      setDemoLoading(false);
+    }
+  };
+
   const handleVerifyCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!verifySession || !verificationCode) {
@@ -308,7 +323,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
     setLoading(true);
     setError(null);
     try {
-      await verifyAdminCode(verifySession.verifyToken, verificationCode);
+      await verify2faCode(verifySession.verifyToken, verificationCode);
     } catch (err: any) {
       setError(err.message || 'Verification code failed. Please check the code.');
     } finally {
@@ -322,7 +337,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
     setError(null);
     setDemoMailNotice(null);
     try {
-      const res = await resendAdminCode(verifySession.verifyToken);
+      const res = await resend2faCode(verifySession.verifyToken);
       setResendSuccessMessage(res.message || 'New verification code dispatched!');
       setTimeout(() => setResendSuccessMessage(null), 4000);
     } catch (err: any) {
@@ -351,7 +366,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
     setGoogleLoading(true);
     setError(null);
     try {
-      await loginWithGoogle();
+      const res = await loginWithGoogle();
+      if (res && res.requiresVerification && res.verifyToken) {
+        setVerifySession({
+          verifyToken: res.verifyToken,
+          email: res.email || 'Google User',
+          devCode: res.devCode,
+          message: res.message,
+        });
+        setVerificationCode('');
+        setError(null);
+      }
     } catch (err: any) {
       setError(err.message || 'Google sign-in could not be completed.');
     } finally {
@@ -359,10 +384,24 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
     }
   };
 
-  const handleForgotPasswordSubmit = (e: React.FormEvent) => {
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!forgotEmail) return;
-    setForgotSent(true);
+    const cleanEmail = forgotEmail.trim();
+    if (!cleanEmail) return;
+
+    setForgotLoading(true);
+    setForgotError(null);
+    try {
+      await apiRequest('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+      setForgotSent(true);
+    } catch (err: any) {
+      setForgotError(err.message || 'Could not process password recovery. Please try again later.');
+    } finally {
+      setForgotLoading(false);
+    }
   };
 
   const [signupLoading, setSignupLoading] = useState(false);
@@ -565,33 +604,29 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                     </div>
                   </div>
 
-                  {/* Quick Demo Credentials Assistant */}
-                  {activeConfig.defaultEmail && (
-                    <div className="p-3 rounded-xl bg-[#202228] border border-zinc-800 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1.5 font-semibold text-zinc-200">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
-                          <span>Demo {activeConfig.badgeLabel} Acc:</span>
-                        </div>
-                        <div className="font-mono text-[11px] text-zinc-400">
-                          <span className="text-zinc-300">{activeConfig.defaultEmail}</span>
-                          <span className="text-zinc-600 mx-1.5">|</span>
-                          <span className="text-emerald-300">{activeConfig.defaultPass}</span>
-                        </div>
+                  {/* Isolated Demo Testing Sandbox (Kept separate from live credentials) */}
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 inline-block animate-pulse" />
+                        <span>Demo Evaluation Mode</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIdentifier(activeConfig.defaultEmail);
-                          setPassword(activeConfig.defaultPass);
-                          setError(null);
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs transition-colors cursor-pointer shrink-0 border border-zinc-700/60 shadow-xs"
-                      >
-                        Auto-fill
-                      </button>
+                      <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-200">
+                        Isolated
+                      </span>
                     </div>
-                  )}
+                    <p className="text-[11px] text-amber-200/80 mt-1 mb-2.5 leading-relaxed">
+                      Enter evaluation sandbox for {activeConfig.badgeLabel}. Real school accounts and live 2FA are protected.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={demoLoading || loading}
+                      onClick={() => handleDemoLogin(role)}
+                      className="w-full py-2 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 hover:text-white font-medium text-xs transition-colors border border-amber-500/30 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {demoLoading ? 'Starting Demo Session...' : `Launch Demo as ${activeConfig.badgeLabel}`}
+                    </button>
+                  </div>
 
                   {/* Main Dynamic Portal Action Button */}
                   <div className="pt-2 space-y-3">
@@ -978,10 +1013,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
             </div>
 
             <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-              Email Confirmation Code
+              Security Verification Code
             </h3>
             <p className="text-xs sm:text-sm text-zinc-400 mt-1.5 leading-relaxed">
-              To protect administrative access, enter the 6-digit verification code sent to:
+              To securely verify your identity, enter the 6-digit confirmation code sent to:
             </p>
             <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/30 text-purple-200 text-xs font-mono font-semibold">
               <Mail className="w-3.5 h-3.5 text-purple-400" />
@@ -1060,7 +1095,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                   ) : (
                     <>
                       <ShieldCheck className="w-4 h-4" />
-                      <span>Confirm & Access Admin Portal</span>
+                      <span>Verify Code & Sign In</span>
                     </>
                   )}
                 </button>
@@ -1110,7 +1145,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
           <div className="bg-[#18181f] border border-zinc-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative text-white">
             <button
               type="button"
-              onClick={() => setShowForgotPassword(false)}
+              onClick={() => {
+                setShowForgotPassword(false);
+                setForgotError(null);
+                setForgotSent(false);
+              }}
               className="absolute top-5 right-5 text-zinc-400 hover:text-white p-1.5 rounded-full hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -1120,6 +1159,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
             <p className="text-xs sm:text-sm text-zinc-400 mb-6">
               Enter your registered email address or identifier to receive instructions to reset your password.
             </p>
+
+            {forgotError && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{forgotError}</span>
+              </div>
+            )}
 
             {forgotSent ? (
               <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-200 text-sm space-y-2">
@@ -1132,7 +1178,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                 </p>
                 <button
                   type="button"
-                  onClick={() => setShowForgotPassword(false)}
+                  onClick={() => {
+                    setShowForgotPassword(false);
+                    setForgotSent(false);
+                    setForgotError(null);
+                  }}
                   className="mt-3 w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-colors cursor-pointer"
                 >
                   Return to Login
@@ -1155,9 +1205,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onOpenAdmissions }) => {
                 </div>
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-xl font-semibold text-sm text-white bg-[#8B5CF6] hover:bg-[#7C3AED] transition-colors cursor-pointer shadow-lg shadow-purple-600/30"
+                  disabled={forgotLoading || !forgotEmail.trim()}
+                  className="w-full py-3 rounded-xl font-semibold text-sm text-white bg-[#8B5CF6] hover:bg-[#7C3AED] disabled:opacity-50 transition-colors cursor-pointer shadow-lg shadow-purple-600/30 flex items-center justify-center gap-2"
                 >
-                  Send Reset Link
+                  {forgotLoading ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <span>Send Reset Link</span>
+                  )}
                 </button>
               </form>
             )}

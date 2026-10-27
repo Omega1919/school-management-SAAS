@@ -11,6 +11,7 @@ interface LoginResult {
   email?: string;
   message?: string;
   devCode?: string;
+  expiresInMinutes?: number;
   user?: User;
 }
 
@@ -20,9 +21,12 @@ interface AuthContextType {
   roleProfile: any;
   loading: boolean;
   login: (identifier: string, password: string, expectedRole?: string) => Promise<LoginResult>;
+  demoLogin: (role: string) => Promise<User>;
+  verify2faCode: (verifyToken: string, code: string) => Promise<User>;
   verifyAdminCode: (verifyToken: string, code: string) => Promise<User>;
+  resend2faCode: (verifyToken: string) => Promise<{ success: boolean; message: string; devCode?: string }>;
   resendAdminCode: (verifyToken: string) => Promise<{ success: boolean; message: string; devCode?: string }>;
-  loginWithGoogle: () => Promise<User>;
+  loginWithGoogle: () => Promise<LoginResult>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
   setAuth: (token: string, user: User) => void;
@@ -81,8 +85,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { user: res.user };
   };
 
-  const verifyAdminCode = async (verifyToken: string, code: string): Promise<User> => {
-    const res = await apiRequest<{ token: string; user: User }>('/auth/verify-admin-code', {
+  const demoLogin = async (role: string): Promise<User> => {
+    const res = await apiRequest<{ token: string; user: User }>('/auth/demo-login', {
+      method: 'POST',
+      body: JSON.stringify({ role }),
+    });
+
+    setStoredToken(res.token);
+    setToken(res.token);
+    setUser(res.user);
+    await refreshProfile();
+    return res.user;
+  };
+
+  const verify2faCode = async (verifyToken: string, code: string): Promise<User> => {
+    const res = await apiRequest<{ token: string; user: User }>('/auth/verify-2fa', {
       method: 'POST',
       body: JSON.stringify({ verifyToken, code }),
     });
@@ -94,17 +111,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res.user;
   };
 
-  const resendAdminCode = async (verifyToken: string): Promise<{ success: boolean; message: string; devCode?: string }> => {
-    return await apiRequest<{ success: boolean; message: string; devCode?: string }>('/auth/resend-admin-code', {
+  const verifyAdminCode = verify2faCode;
+
+  const resend2faCode = async (verifyToken: string): Promise<{ success: boolean; message: string; devCode?: string }> => {
+    return await apiRequest<{ success: boolean; message: string; devCode?: string }>('/auth/resend-2fa', {
       method: 'POST',
       body: JSON.stringify({ verifyToken }),
     });
   };
 
-  const loginWithGoogle = async (): Promise<User> => {
+  const resendAdminCode = resend2faCode;
+
+  const loginWithGoogle = async (): Promise<LoginResult> => {
     let googleCredentials: { accessToken?: string; idToken?: string };
     try {
-      // Primary direct connection to accounts.google.com (bypasses unhosted firebaseapp.com domains)
+      // Primary direct connection to accounts.google.com
       googleCredentials = await requestGoogleSignIn();
     } catch (gisError: any) {
       console.warn('Direct Google Sign-In failed or fallback requested, trying Firebase popup:', gisError);
@@ -117,19 +138,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    const res = await apiRequest<{ token: string; user: User }>('/auth/google', {
+    const res = await apiRequest<any>('/auth/google', {
       method: 'POST',
       body: JSON.stringify(googleCredentials),
     });
+
+    if (res.requiresVerification) {
+      return res;
+    }
 
     setStoredToken(res.token);
     setToken(res.token);
     setUser(res.user);
     await refreshProfile();
-    return res.user;
+    return { user: res.user };
   };
 
   const logout = () => {
+    // Notify backend to invalidate session and advance tokenVersion
+    apiRequest('/auth/logout', { method: 'POST' }).catch(() => {});
     setStoredToken(null);
     setToken(null);
     setUser(null);
@@ -151,7 +178,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         roleProfile,
         loading,
         login,
+        demoLogin,
+        verify2faCode,
         verifyAdminCode,
+        resend2faCode,
         resendAdminCode,
         loginWithGoogle,
         logout,

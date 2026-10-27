@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth, AuthProvider } from './context/AuthContext.tsx';
 import { SettingsProvider, useSettings } from './context/SettingsContext.tsx';
 import { ProfileModalProvider } from './context/ProfileModalContext.tsx';
+import { AccountModalProvider, useAccountModal } from './context/AccountModalContext.tsx';
 import { CommunicationsProvider, useCommunications } from './context/CommunicationsContext.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
@@ -30,9 +31,11 @@ import { AdmissionsAdminView } from './views/AdmissionsAdminView.tsx';
 import { AdmissionsPublicView } from './views/AdmissionsPublicView.tsx';
 import { PublicPortalAdminView } from './views/PublicPortalAdminView.tsx';
 import { AdmissionsVisualEditorView } from './views/AdmissionsVisualEditorView.tsx';
+import { ResetPasswordView } from './views/ResetPasswordView.tsx';
 
 function MainApp() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
+  const { openLogoutConfirm } = useAccountModal();
   const { schoolName } = useSettings();
   const { setTargetThreadId } = useCommunications();
 
@@ -40,6 +43,19 @@ function MainApp() {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState<boolean>(false);
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState<boolean>(false);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+  const [showResetPassword, setShowResetPassword] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      const search = window.location.search;
+      return (
+        path.includes('/reset-password') ||
+        hash.startsWith('#/reset-password') ||
+        search.includes('token=')
+      );
+    }
+    return false;
+  });
   const [showPublicAdmissions, setShowPublicAdmissions] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash;
@@ -57,10 +73,17 @@ function MainApp() {
     return false;
   });
 
-  // Listen to hash changes for direct deep linking (e.g. #/apply, #/programs, #/news, or #/track)
+  // Listen to hash and popstate changes for deep linking (e.g. #/apply, #/reset-password, or ?token=)
   useEffect(() => {
-    const handleHashChange = () => {
+    const handleUrlChange = () => {
+      const path = window.location.pathname;
       const hash = window.location.hash;
+      const search = window.location.search;
+
+      if (path.includes('/reset-password') || hash.startsWith('#/reset-password') || search.includes('token=')) {
+        setShowResetPassword(true);
+      }
+
       if (
         hash.startsWith('#/apply') ||
         hash.startsWith('#/admissions') ||
@@ -74,33 +97,22 @@ function MainApp() {
         setShowPublicAdmissions(true);
       }
     };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
 
-  // Set default starting view according to user role
-  useEffect(() => {
-    if (user) {
-      if (user.role === 'parent') {
-        setCurrentView('parent-portal');
-      } else if (user.role === 'student') {
-        setCurrentView('student-portal');
-      } else {
-        setCurrentView('overview');
-      }
-    }
-  }, [user?.role]);
-
-  // Global keyboard shortcut for search (Cmd+K / Ctrl+K)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsSearchOpen(true);
+    const handleAppNavigate = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail) {
+        setCurrentView(customEvent.detail);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+
+    window.addEventListener('hashchange', handleUrlChange);
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('app-navigate', handleAppNavigate);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlChange);
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('app-navigate', handleAppNavigate);
+    };
   }, []);
 
   if (loading) {
@@ -113,6 +125,19 @@ function MainApp() {
   }
 
   if (!user) {
+    if (showResetPassword) {
+      return (
+        <ResetPasswordView
+          onBackToLogin={() => {
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', '/');
+            }
+            setShowResetPassword(false);
+          }}
+        />
+      );
+    }
+
     if (showPublicAdmissions) {
       return (
         <AdmissionsPublicView
@@ -213,7 +238,7 @@ function MainApp() {
         onSelectView={(v) => setCurrentView(v)}
         userRole={user.role}
         userFullName={user.fullName}
-        onLogout={logout}
+        onLogout={openLogoutConfirm}
         isOpenMobile={isMobileNavOpen}
         onCloseMobile={() => setIsMobileNavOpen(false)}
         isCollapsed={isDesktopCollapsed}
@@ -267,11 +292,13 @@ export default function App() {
     <ErrorBoundary>
       <SettingsProvider>
         <AuthProvider>
-          <CommunicationsProvider>
-            <ProfileModalProvider>
-              <MainApp />
-            </ProfileModalProvider>
-          </CommunicationsProvider>
+          <AccountModalProvider>
+            <CommunicationsProvider>
+              <ProfileModalProvider>
+                <MainApp />
+              </ProfileModalProvider>
+            </CommunicationsProvider>
+          </AccountModalProvider>
         </AuthProvider>
       </SettingsProvider>
     </ErrorBoundary>

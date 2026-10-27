@@ -29,6 +29,7 @@ import { UserRole } from '../types.ts';
 import { useSettings } from '../context/SettingsContext.tsx';
 import { useCommunications } from '../context/CommunicationsContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { useAccountModal } from '../context/AccountModalContext.tsx';
 
 interface SidebarProps {
   currentView: string;
@@ -69,6 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { schoolName } = useSettings();
   const { unreadCount } = useCommunications();
   const { user } = useAuth();
+  const { openAccountModal, openLogoutConfirm } = useAccountModal();
   const [filterQuery, setFilterQuery] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
@@ -184,6 +186,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'announcements', label: 'Announcements', icon: Bell },
       ],
     },
+    {
+      id: 'teacher-account',
+      groupTitle: 'Account & Preferences',
+      items: [
+        { id: 'settings', label: 'My Account & Settings', icon: Settings },
+      ],
+    },
   ];
 
   const parentNavGroups: NavGroup[] = [
@@ -213,6 +222,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'announcements', label: 'Announcements', icon: Bell },
       ],
     },
+    {
+      id: 'parent-account',
+      groupTitle: 'Account & Preferences',
+      items: [
+        { id: 'settings', label: 'My Account & Settings', icon: Settings },
+      ],
+    },
   ];
 
   const studentNavGroups: NavGroup[] = [
@@ -239,6 +255,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { id: 'fees', label: 'Fee Invoices', icon: CreditCard },
         { id: 'announcements', label: 'Announcements', icon: Bell },
+      ],
+    },
+    {
+      id: 'student-account',
+      groupTitle: 'Account & Preferences',
+      items: [
+        { id: 'settings', label: 'My Account & Settings', icon: Settings },
       ],
     },
   ];
@@ -559,11 +582,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               isCollapsed ? 'justify-center p-2' : 'justify-between p-2.5'
             }`}
           >
-            {/* Avatar & User Details */}
-            <div className="flex items-center gap-2.5 overflow-hidden">
+            {/* Avatar & User Details - Clickable to Manage Account */}
+            <button
+              type="button"
+              onClick={() => onSelectView('settings')}
+              title="Manage My Account Settings"
+              className="flex items-center gap-2.5 overflow-hidden hover:opacity-80 transition-opacity cursor-pointer text-left min-w-0 flex-1"
+            >
               <div
                 className="w-8 h-8 rounded-lg bg-purple-950 text-purple-300 border border-purple-700/50 flex items-center justify-center font-bold text-xs shrink-0"
-                title={userFullName}
               >
                 {userFullName?.charAt(0) || 'U'}
               </div>
@@ -577,13 +604,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {userRole.replace('_', ' ')}
                 </p>
               </div>
-            </div>
+            </button>
 
             {/* Logout action */}
             <button
               id="sidebar-logout-btn"
               type="button"
-              onClick={onLogout}
+              onClick={openLogoutConfirm}
               title="Sign out of school portal"
               className={`p-1.5 text-zinc-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors shrink-0 cursor-pointer ${
                 isCollapsed ? 'hidden md:hidden' : 'block'
@@ -599,7 +626,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="hidden md:flex justify-center mt-2 relative group">
               <button
                 type="button"
-                onClick={onLogout}
+                onClick={openLogoutConfirm}
                 className="w-full flex items-center justify-center p-2 text-zinc-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
                 title="Sign out"
               >

@@ -1089,6 +1089,75 @@ CREATE INDEX IF NOT EXISTS admin_verif_token_idx ON admin_verification_sessions 
 CREATE INDEX IF NOT EXISTS admin_verif_user_idx ON admin_verification_sessions (user_id);
 `,
   },
+  {
+    version: 21,
+    name: 'universal_mfa_and_session_security',
+    sql: `
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 1;
+EXCEPTION WHEN OTHERS THEN null; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
+EXCEPTION WHEN OTHERS THEN null; END $$;
+
+CREATE INDEX IF NOT EXISTS users_token_version_idx ON users (token_version);
+CREATE INDEX IF NOT EXISTS users_is_demo_idx ON users (is_demo);
+
+CREATE TABLE IF NOT EXISTS auth_verification_challenges (
+  id SERIAL PRIMARY KEY,
+  challenge_token TEXT UNIQUE NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  attempts_remaining INTEGER NOT NULL DEFAULT 5,
+  resend_count INTEGER NOT NULL DEFAULT 0,
+  last_resend_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMP NOT NULL,
+  is_consumed BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS auth_challenges_token_idx ON auth_verification_challenges (challenge_token);
+CREATE INDEX IF NOT EXISTS auth_challenges_user_idx ON auth_verification_challenges (user_id);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+  id SERIAL PRIMARY KEY,
+  session_id TEXT UNIQUE NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  ip_address TEXT,
+  user_agent TEXT,
+  is_valid BOOLEAN NOT NULL DEFAULT TRUE,
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+DO $$ BEGIN
+  ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS ip_address TEXT;
+EXCEPTION WHEN OTHERS THEN null; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;
+EXCEPTION WHEN OTHERS THEN null; END $$;
+
+CREATE INDEX IF NOT EXISTS user_sessions_id_idx ON user_sessions (session_id);
+CREATE INDEX IF NOT EXISTS user_sessions_user_idx ON user_sessions (user_id);
+`,
+  },
+  {
+    version: 22,
+    name: '0022_user_sessions_columns_alignment',
+    sql: `
+DO $$ BEGIN
+  ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS ip_address TEXT;
+EXCEPTION WHEN OTHERS THEN null; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;
+EXCEPTION WHEN OTHERS THEN null; END $$;
+`,
+  },
 ];
 
 async function executeSql(sql: string): Promise<void> {
