@@ -9,6 +9,7 @@ import { Sidebar } from './components/Sidebar.tsx';
 import { Header } from './components/Header.tsx';
 import { GlobalSearchModal } from './components/GlobalSearchModal.tsx';
 import { MessageNotificationToast } from './components/MessageNotificationToast.tsx';
+import { DemoModeBanner } from './components/DemoModeBanner.tsx';
 
 // Views
 import { LoginView } from './views/LoginView.tsx';
@@ -289,18 +290,21 @@ function MainApp() {
 
 export default function App() {
   return (
-    <ErrorBoundary>
-      <SettingsProvider>
-        <AuthProvider>
-          <AccountModalProvider>
-            <CommunicationsProvider>
-              <ProfileModalProvider>
-                <MainApp />
-              </ProfileModalProvider>
-            </CommunicationsProvider>
-          </AccountModalProvider>
-        </AuthProvider>
-      </SettingsProvider>
-    </ErrorBoundary>
+    <div className="min-h-screen">
+      <DemoModeBanner />
+      <ErrorBoundary>
+        <SettingsProvider>
+          <AuthProvider>
+            <AccountModalProvider>
+              <CommunicationsProvider>
+                <ProfileModalProvider>
+                  <MainApp />
+                </ProfileModalProvider>
+              </CommunicationsProvider>
+            </AccountModalProvider>
+          </AuthProvider>
+        </SettingsProvider>
+      </ErrorBoundary>
+    </div>
   );
 }

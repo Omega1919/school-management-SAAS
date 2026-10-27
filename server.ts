@@ -26,6 +26,7 @@ import { timetableRouter } from './src/routes/timetable.ts';
 import { admissionsRouter } from './src/routes/admissions.ts';
 import { publicPortalRouter } from './src/routes/public-portal.ts';
 import { db, pool, runWithSchoolTransaction, verifyDatabase } from './src/db/index.ts';
+import { isRlsBypassDemoModeEnabled } from './src/db/postgres-role-check.ts';
 import { schools } from './src/db/schema.ts';
 import { ensureDefaultDemoData, ensureSecondaryDemoSchoolData } from './src/db/seed.ts';
 import { startOverdueFeeReminderSchedule } from './src/lib/fee-reminders.ts';
@@ -67,6 +68,13 @@ async function startServer() {
   // Health check endpoint
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Public, read-only runtime display config. This is server-provided and does
+  // not allow clients to change the database-role verification setting.
+  app.get('/api/runtime-config', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ demoMode: isRlsBypassDemoModeEnabled() });
   });
 
   // Platform provisioning is protected by a dedicated server-side secret and
