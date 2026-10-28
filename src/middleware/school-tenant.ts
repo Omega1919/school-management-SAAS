@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { and, eq } from 'drizzle-orm';
 import { db, runWithSchoolContext } from '../db/index.ts';
+import { isRlsBypassDemoModeEnabled } from '../db/postgres-role-check.ts';
 import { schools } from '../db/schema.ts';
 
 export interface TenantRequest extends Request {
@@ -21,7 +22,14 @@ export async function schoolTenantMiddleware(req: TenantRequest, res: Response, 
     const subdomain = tenantRoot && host.endsWith(`.${tenantRoot}`)
       ? host.slice(0, -(tenantRoot.length + 1)).split('.')[0]
       : '';
-    const fallbackSlug = localHost ? configuredDefault || 'springfield' : configuredDefault;
+    // A one-school buyer demo often runs on a Render hostname with no school
+    // domain mapping. Reuse the local Springfield fallback only when the
+    // server-side demo override is explicitly enabled. Other deployments
+    // still need a configured default or a school domain.
+    const demoFallback = isRlsBypassDemoModeEnabled() ? 'springfield' : '';
+    const fallbackSlug = localHost
+      ? configuredDefault || 'springfield'
+      : configuredDefault || demoFallback;
 
     // Resolve the tenant from the actual domain first. A client-provided
     // school slug must not override the school configured for this hostname.
